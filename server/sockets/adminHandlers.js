@@ -1,0 +1,119 @@
+const Player = require('../models/Players');
+const gameState = require('../utils/gameState');
+const { emitQuestionPosition } = require('../utils/gameLogics');
+
+const {
+    getTimerInterval,
+    setGameSessionId,
+    setGameState,
+    setCurrentQuestionIndex,
+    setFirstCorrectAnswer,
+    setTimerInterval,
+    setRemainingTime,
+    getGameState,
+    resetQuestionAwards,
+    resetAnswered,
+    players,
+    playerTimeouts
+} = gameState;
+
+const registerAdminHandlers = (io, socket, loadQuestions) => {
+
+    // --- RESET GAME ---
+    socket.on('reset_game', async (data) => { 
+        try{
+        const cleanPlayers = data?.cleanPlayers || false;
+        
+        console.log(`🧹 Reiniciando juego - Limpiar jugadores: ${cleanPlayers}`);
+        
+        setGameSessionId(Date.now());
+
+        // Limpiar todos los timeouts pendientes
+        for (const key in playerTimeouts){
+            clearTimeout(playerTimeouts[key]);
+            delete playerTimeouts[key];
+        }
+
+        if (cleanPlayers) {
+    // Borrar todos los jugadores de BD
+    await Player.destroy({ where: {} });
+    console.log('🧹 Jugadores eliminados de BD');
+    
+    // Vaciar players de memoria (EXCEPTO HOST)
+    for (const key in players) {
+        if (players[key].name !== 'HOST') {
+            delete players[key];
+        }
+    }
+    console.log('🗑️ Jugadores eliminados de memoria');
+    } else {
+        // Solo marcar como desconectados en BD
+        await Player.update(
+            { isConnected: false },
+            { where: {} }
+        );
+        console.log('🔄 Jugadores mantenidos en BD (marcados como desconectados)');
+        
+        // Mantener jugadores en memoria, solo resetear estado
+        for (const key in players) {
+            if (players[key].name !== 'HOST') {
+                players[key].hasAnswered = false;
+                players[key].isConnected = true;
+            }
+        }
+        console.log('✅ Jugadores mantenidos en memoria (estado reseteado)');
+    }
+
+        // Reiniciamos variables
+        setGameState("LOBBY");
+        
+        setCurrentQuestionIndex(0);
+        
+        setFirstCorrectAnswer(null);
+
+        // Limpiar timer
+        if (getTimerInterval()) {
+            clearInterval(getTimerInterval());
+            setTimerInterval(null);
+        }
+        
+        setRemainingTime(0);
+
+        // Olvidar los puntos por pregunta y quién había respondido
+        resetQuestionAwards();
+        resetAnswered();
+
+        await loadQuestions();
+        console.log("🔄 Preguntas recargadas");
+
+        // Avisamos a todos
+        io.emit('game_state', getGameState());
+
+        // El HOST vuelve a la pregunta 0 (necesario para validar sus clics de navegación)
+        emitQuestionPosition(io);
+
+        // Enviar lista correcta de jugadores según si se limpió o no
+        if (cleanPlayers) {
+            io.emit('update_players', []);
+        } else {
+            io.emit('update_players', Object.values(players));
+        } 
+
+        if (cleanPlayers) {
+            console.log('📢 Emitiendo force_refresh (limpiar todo)');
+            io.emit('force_refresh');
+        } else {
+            console.log('ℹ️ No se emite force_refresh (mantener jugadores)');
+            // Los jugadores recibirán game_state y volverán al lobby automáticamente
+        } 
+
+        } catch (error){
+            console.error('❌ Error en reset_game:', error.message);
+            io.to('game_room').emit('error', { 
+                message: 'Error al reiniciar el juego' 
+            });
+        }
+    });
+};
+
+module.exports = {registerAdminHandlers}
