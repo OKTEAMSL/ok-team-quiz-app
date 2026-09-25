@@ -1,10 +1,104 @@
 import { useEffect, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import { useBranding } from '../hooks/useBranding';
 import QRCode from "react-qr-code";
 import '../styles/HostView.css'
 
+const KIND_LABELS = {
+    TRUE_FALSE: 'Verdadero o falso',
+    NUMBER: 'Número más cercano',
+    POLL: 'Encuesta'
+};
+
+const PLACE_ICONS = ['🥇', '🥈', '🥉'];
+
+const formatNumber = (n) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 6 }).format(n);
+
+// Lo que se ve en la pantalla principal al pulsar "Mostrar respuesta", según el tipo de pregunta
+const renderReveal = (reveal) => {
+    const kind = reveal.kind || 'CHOICE';
+
+    if (kind === 'NUMBER') {
+        const winners = (reveal.ranking || []).filter((row) => row.points > 0);
+        const answeredCount = (reveal.ranking || []).length;
+
+        return (
+            <div className="answer-reveal">
+                <h2 className="answer-title">✅ Respuesta Correcta:</h2>
+                <div className="correct-answer-display number-reveal">{formatNumber(reveal.correctNumber)}</div>
+
+                {winners.length > 0 ? (
+                    <ul className="number-ranking">
+                        {winners.map((row) => (
+                            <li key={row.name} className="number-ranking-row">
+                                <span className="number-place">{PLACE_ICONS[row.place - 1] || `${row.place}.`}</span>
+                                <span className="number-team">{row.name}</span>
+                                <span className="number-guess">
+                                    {formatNumber(row.answer)}
+                                    <small>{row.distance === 0 ? ' · exacto' : ` · a ${formatNumber(row.distance)}`}</small>
+                                </span>
+                                <strong className="number-points">+{row.points}</strong>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="number-nobody">Nadie respondió esta pregunta</p>
+                )}
+
+                {answeredCount > 0 && (
+                    <p className="number-answered">{answeredCount} {answeredCount === 1 ? 'equipo respondió' : 'equipos respondieron'}</p>
+                )}
+            </div>
+        );
+    }
+
+    if (kind === 'POLL') {
+        const total = reveal.total || 0;
+
+        return (
+            <div className="answer-reveal poll-reveal">
+                <h2 className="answer-title">📊 Resultados de la encuesta</h2>
+                {(reveal.options || []).map((text, i) => {
+                    const votes = reveal.counts?.[i] || 0;
+                    const percent = total > 0 ? Math.round((votes * 100) / total) : 0;
+
+                    return (
+                        <div key={i} className="poll-host-row">
+                            <div className="poll-host-head">
+                                <span className="poll-host-option">{text}</span>
+                                <span className="poll-host-numbers">{votes} · {percent}%</span>
+                            </div>
+                            <div className="poll-host-track">
+                                <div className="poll-host-fill" style={{ width: `${percent}%` }}></div>
+                            </div>
+                        </div>
+                    );
+                })}
+                <p className="number-answered">{total} {total === 1 ? 'voto' : 'votos'}</p>
+            </div>
+        );
+    }
+
+    // Opción múltiple y verdadero/falso
+    const options = reveal.correctOptions ?? [reveal.correctOption];
+
+    return (
+        <div className="answer-reveal">
+            <h2 className="answer-title">
+                ✅ {options.length > 1 ? 'Respuestas Correctas:' : 'Respuesta Correcta:'}
+            </h2>
+            {options.map((option, i) => (
+                <div key={i} className="correct-answer-display">
+                    {option}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 function HostView() {
     const { socket } = useSocket();
+    const branding = useBranding();   // logo, color y texto de bienvenida del cliente
 
     const [groups, setGroups] = useState([]);
     const [gameState, setGameState] = useState("LOBBY");
@@ -214,7 +308,8 @@ function HostView() {
         return(
             <div className="host-container">
                 <div>
-                    <h1 className="big-title">OK TEAM Quiz</h1>
+                    {branding.logoUrl && <img className="host-logo host-logo-big" src={branding.logoUrl} alt="" />}
+                    <h1 className="big-title">{branding.welcomeText || 'OK TEAM Quiz'}</h1>
                 
                     <div className="qr-frame">
                         {joinUrl && (
@@ -260,6 +355,7 @@ function HostView() {
 
         return(
             <div className="host-container">
+                {branding.logoUrl && <img className="host-logo host-logo-corner" src={branding.logoUrl} alt="" />}
                 <h1 className="big-title">Partida Finalizada</h1>
                 {winner && (
                     <div className="qr-frame">
@@ -307,8 +403,13 @@ function HostView() {
         )
     }
 
+    const playersOnly = groups.filter(g => g.name !== 'HOST');
+    const answeredCount = playersOnly.filter(g => g.hasAnswered).length;
+    const currentKind = currentQuestion?.kind || 'CHOICE';
+
     return(
         <div className="host-container">
+            {branding.logoUrl && <img className="host-logo host-logo-corner" src={branding.logoUrl} alt="" />}
             <div className="secondary-buttons">
                 <button 
                     className="btn-secondary-icon"
@@ -329,6 +430,7 @@ function HostView() {
                     {questionPosition && questionPosition.total > 0 && (
                         <div className="question-counter">
                             Pregunta {questionPosition.number} de {questionPosition.total}
+                            {KIND_LABELS[currentKind] && <span className="kind-badge">{KIND_LABELS[currentKind]}</span>}
                         </div>
                     )}
                     <h1 className="question-title">{currentQuestion?.title}</h1>
@@ -353,24 +455,23 @@ function HostView() {
                         </div>
                     )}
                     
-                    {gameState === 'SHOW_ANSWER' && correctAnswer && (
-                        <div className="answer-reveal">
-                            <h2 className="answer-title">
-                                ✅ {(correctAnswer.correctOptions?.length ?? 1) > 1 ? 'Respuestas Correctas:' : 'Respuesta Correcta:'}
-                            </h2>
-                            {(correctAnswer.correctOptions ?? [correctAnswer.correctOption]).map((option, i) => (
-                                <div key={i} className="correct-answer-display">
-                                    {option}
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                    {gameState === 'SHOW_ANSWER' && correctAnswer && renderReveal(correctAnswer)}
                     
+                    {gameState === 'QUESTION_ACTIVE' && currentKind === 'NUMBER' && (
+                        <p className="kind-hint">🔢 Escriban el número en el móvil</p>
+                    )}
+
                     {gameState === 'QUESTION_ACTIVE' && timer !== null && (
                         <div className="timer-display">
                             <span className="timer-icon">⏱️</span>
                             <span className="timer-number">{timer}</span>
                         </div>
+                    )}
+
+                    {gameState === 'QUESTION_ACTIVE' && playersOnly.length > 0 && (
+                        <p className="answered-counter">
+                            Han respondido <strong>{answeredCount}</strong> de <strong>{playersOnly.length}</strong>
+                        </p>
                     )}
                 </div>
 
@@ -394,7 +495,7 @@ function HostView() {
                         <button 
                             className="btn-main-action show-answer"
                             onClick={()=>{socket.emit('show_answer')}}>
-                                Mostrar Respuesta Correcta
+                                {currentKind === 'POLL' ? 'Mostrar Resultados' : 'Mostrar Respuesta Correcta'}
                         </button>
                     )}
 

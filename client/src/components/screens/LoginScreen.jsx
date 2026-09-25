@@ -1,4 +1,5 @@
 import PropTypes from 'prop-types';
+import { useBranding } from '../../hooks/useBranding';
 import '../../styles/LoginScreen.css';
 
 const LoginScreen = ({ 
@@ -7,6 +8,7 @@ const LoginScreen = ({
     onEnterGame, 
     isConnected 
 }) => {
+    const { logoUrl, welcomeText } = useBranding();
     
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
@@ -17,7 +19,8 @@ const LoginScreen = ({
     return (
         <div className="mobile-container">
             <div className="mobile-card">
-                <h1 className="welcome-title">¿Listos para jugar?</h1>
+                {logoUrl && <img className="login-logo" src={logoUrl} alt="" />}
+                <h1 className="welcome-title">{welcomeText || '¿Listos para jugar?'}</h1>
                 <p>Ingresa el nombre de tu equipo</p>
                 
                 <input 

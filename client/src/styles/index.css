@@ -1,6 +1,7 @@
 :root {
     /* --- Colores principales --- */
     --primary-blue: #009fe3;
+    --primary-blue-dark: #0077cc;   /* hover; se recalcula si el cliente tiene su propio color */
     --bg-color: #f4f7f6;
     --card-bg: #ffffff;
     --text-main: #333333;
@@ -78,5 +79,5 @@ body {
 }
 
 .btn-primary:hover {
-    background-color: #0077cc;
+    background-color: var(--primary-blue-dark);
 }

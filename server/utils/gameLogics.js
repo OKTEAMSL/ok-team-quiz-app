@@ -1,7 +1,7 @@
 const Player = require('../models/Players');
 const { sequelize } = require('../config/db');
 const gameState = require('./gameState');
-const { findAllOrdered, toClientQuestion } = require('./questionUtils');
+const { findAllOrdered, getActiveQuiz, toClientQuestion } = require('./questionUtils');
 
 const {
     getCurrentQuestionIndex,
@@ -23,10 +23,12 @@ const {
 // --- Cargar preguntas (en el orden definido en el panel Admin) ---
 const loadQuestions = async() => {
     try {
-        const questionsFromDB = await findAllOrdered();
+        // Solo las preguntas del cuestionario que está en uso
+        const quiz = await getActiveQuiz();
+        const questionsFromDB = await findAllOrdered(quiz ? quiz.id : undefined);
         const loadedQuestions = questionsFromDB.map(q => q.toJSON());
         setQuestions(loadedQuestions);
-        console.log(`✅ ${loadedQuestions.length} preguntas cargadas.`);
+        console.log(`✅ ${loadedQuestions.length} preguntas cargadas${quiz ? ` (cuestionario "${quiz.name}")` : ''}.`);
     } catch (error) {
         console.error("❌ Error al cargar preguntas:", error);
     }

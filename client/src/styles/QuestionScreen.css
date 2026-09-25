@@ -158,3 +158,94 @@
         font-size: 1rem;
     }
 }
+
+/* ===== Pregunta de número: el equipo escribe su respuesta ===== */
+
+.number-answer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.number-input-row {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: stretch;
+}
+
+.number-sign {
+    flex-shrink: 0;
+    width: 64px;
+    font-size: 1.8rem;
+    font-weight: 700;
+    border: 3px solid #d1d5db;
+    border-radius: var(--radius-lg);
+    background: white;
+    color: var(--primary-blue);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.number-sign:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.number-input {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    padding: var(--spacing-lg) var(--spacing-md);
+    font-size: 2rem;
+    font-weight: 700;
+    text-align: center;
+    border: 3px solid #d1d5db;
+    border-radius: var(--radius-lg);
+    background: white;
+    color: var(--text-main);
+    font-family: inherit;
+}
+
+.number-input:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+}
+
+.number-input:disabled {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.number-send {
+    width: 100%;
+}
+
+.number-send:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.number-hint {
+    margin: 0;
+    color: var(--color-error);
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.number-sent {
+    text-align: center;
+    font-size: 1.2rem;
+    color: var(--color-success);
+    font-weight: 600;
+}
+
+/* Verdadero / Falso: dos botones grandes, uno encima del otro */
+.true-false-grid {
+    grid-template-columns: 1fr;
+}
+
+.true-false-grid .game-btn {
+    min-height: 90px;
+    font-size: 1.5rem;
+}

@@ -32,10 +32,13 @@ export const useGameSocket = (socket, gameHandlers) => {
             if (navigator.vibrate) navigator.vibrate(100);
         };
 
-        // El HOST pulsó "Mostrar respuesta": llega SOLO el texto de la(s) respuesta(s)
-        // correcta(s). Nunca se envía el texto de la pregunta.
+        // El HOST pulsó "Mostrar respuesta": llega SOLO la respuesta (o los resultados de la
+        // encuesta). Nunca se envía el texto de la pregunta.
+        //   { kind, correctOptions }            opción múltiple y verdadero/falso
+        //   { kind: 'NUMBER', correctNumber }   número más cercano
+        //   { kind: 'POLL', options, counts, total }   encuesta
         const handleAnswerRevealed = (data) => {
-            setRevealedAnswers(Array.isArray(data?.correctOptions) ? data.correctOptions : []);
+            setRevealedAnswers(data && typeof data === 'object' ? data : {});
         };
 
         const handleTimerUpdate = (data) => {

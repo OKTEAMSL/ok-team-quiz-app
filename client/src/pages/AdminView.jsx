@@ -1,7 +1,23 @@
 import { useState, useEffect, useRef } from "react"
 import { useSocket } from '../hooks/useSocket';
 import RecoveryCodeModal from '../components/screens/RecoveryCodeModal';
+import QuizManager from '../components/admin/QuizManager';
 import '../styles/Admin.css'
+
+// Tipos de respuesta que se pueden elegir al crear una pregunta
+const KIND_OPTIONS = [
+    { value: 'CHOICE',     icon: '🔘', label: 'Opción múltiple',    desc: 'Varias opciones, una o más correctas' },
+    { value: 'TRUE_FALSE', icon: '✅', label: 'Verdadero / Falso',  desc: 'Dos botones grandes' },
+    { value: 'NUMBER',     icon: '🔢', label: 'Número más cercano', desc: 'Gana quien más se acerque' },
+    { value: 'POLL',       icon: '📊', label: 'Encuesta',           desc: 'Sin respuesta correcta ni puntos' }
+];
+
+const KIND_TAGS = {
+    CHOICE: null,
+    TRUE_FALSE: 'Verdadero/Falso',
+    NUMBER: 'Número más cercano',
+    POLL: 'Encuesta'
+};
 
 const PlayerEditItem = ({ player, onEdit }) => {
     const [scoreChange, setScoreChange] = useState(0);
@@ -53,6 +69,15 @@ function AdminView() {
     const [ mediaUrl, setMediaUrl ] = useState("");
     const [ correctIndexes, setCorrectIndexes ] = useState([0]);   // 1 o más respuestas correctas
     const [ multiCorrect, setMultiCorrect ] = useState(false);       // ¿permite más de una?
+
+    // Tipo de respuesta: CHOICE (opción múltiple) | TRUE_FALSE | NUMBER | POLL
+    const [ kind, setKind ] = useState("CHOICE");
+    const [ correctNumber, setCorrectNumber ] = useState("");        // texto, para poder escribir "12,5"
+
+    // Cuestionarios (uno por cliente/evento). 'selectedQuizId' es el que se está editando;
+    // el que se juega es el marcado como "EN USO".
+    const [ quizzes, setQuizzes ] = useState([]);
+    const [ selectedQuizId, setSelectedQuizId ] = useState(null);
 
     // Estados de gestión
     const [ questionsList, setQuestionsList ] = useState([]); 
@@ -177,10 +202,12 @@ function AdminView() {
         });
     };
 
-    const fetchQuestions = async () => {
+    const fetchQuestions = async (quizId = selectedQuizId) => {
+        if (!quizId) return;
+
         try {
             console.log('📥 Cargando preguntas...');
-            const response = await fetchWithAuth(`${API_URL}/api/questions`);
+            const response = await fetchWithAuth(`${API_URL}/api/questions?quizId=${quizId}`);
 
             if (response.status === 401 || response.status === 403) {
                 alert('⛔ Sesión expirada. Por favor, inicia sesión de nuevo.');
@@ -194,6 +221,44 @@ function AdminView() {
         } catch (error) {
             console.error("Error al cargar preguntas:", error);
         }
+    };
+
+    // Carga los cuestionarios. 'selectId' = el que debe quedar seleccionado (p. ej. el recién
+    // creado); si no se indica se conserva la selección actual o se elige el que está en uso.
+    const fetchQuizzes = async (selectId) => {
+        try {
+            const response = await fetchWithAuth(`${API_URL}/api/quizzes`);
+
+            if (response.status === 401 || response.status === 403) {
+                alert('⛔ Sesión expirada. Por favor, inicia sesión de nuevo.');
+                localStorage.removeItem('admin_token');
+                window.location.reload();
+                return;
+            }
+
+            const list = await response.json();
+            setQuizzes(list);
+
+            setSelectedQuizId((current) => {
+                const wanted = selectId || current;
+                if (wanted && list.some((quiz) => quiz.id === wanted)) return wanted;
+                const active = list.find((quiz) => quiz.isActive);
+                return (active || list[0])?.id || null;
+            });
+        } catch (error) {
+            console.error("Error al cargar cuestionarios:", error);
+        }
+    };
+
+    // Lo usa el gestor de cuestionarios tras crear, activar, duplicar, borrar o editar
+    const handleQuizzesChanged = async (selectId) => {
+        await fetchQuizzes(selectId);
+    };
+
+    const handleSelectQuiz = (quizId) => {
+        if (quizId === selectedQuizId) return;
+        resetForm();
+        setSelectedQuizId(quizId);
     };
 
     const fetchPlayers = async () => {
@@ -261,9 +326,14 @@ function AdminView() {
     };
 
     useEffect(() => {
-        fetchQuestions();
+        fetchQuizzes();
         fetchPlayers();
     }, []);
+
+    // Al cambiar el cuestionario que se edita, se cargan SUS preguntas
+    useEffect(() => {
+        if (selectedQuizId) fetchQuestions(selectedQuizId);
+    }, [selectedQuizId]);
 
     const handleOptionChange = (index, value) => {
         let copyOptions = [...options];
@@ -316,10 +386,16 @@ function AdminView() {
     }
 
     const handleEdit = (question) => {
+        const questionKind = question.kind || 'CHOICE';
+        const questionOptions = Array.isArray(question.options) ? question.options : JSON.parse(question.options);
+
         setEditingId(question.id);
         setTitle(question.title);
         setType(question.type);
-        setOptions(Array.isArray(question.options) ? question.options : JSON.parse(question.options));
+        setKind(questionKind);
+        setCorrectNumber(question.correctNumber === null || question.correctNumber === undefined ? "" : String(question.correctNumber));
+        // Las preguntas de número no tienen opciones: se deja el formulario listo por si se cambia de tipo
+        setOptions(questionOptions.length >= 2 ? questionOptions : ["", ""]);
         setMediaUrl(question.mediaUrl || "");
         // Las preguntas antiguas solo tienen correctIndex
         const saved = Array.isArray(question.correctIndexes) && question.correctIndexes.length > 0
@@ -348,6 +424,7 @@ function AdminView() {
 
             if (response.ok) {
                 fetchQuestions(); 
+                fetchQuizzes();
             } else {
                 alert("Error al borrar la pregunta");
             }
@@ -365,13 +442,52 @@ function AdminView() {
         setMediaUrl("");
         setCorrectIndexes([0]);
         setMultiCorrect(false);
+        setKind("CHOICE");
+        setCorrectNumber("");
         setTimeLimit(10);
     }
 
+    // Cambiar el tipo de respuesta deja el formulario coherente con el nuevo tipo
+    const handleKindChange = (newKind) => {
+        if (newKind === kind) return;
+
+        if (newKind === 'TRUE_FALSE') {
+            setOptions(["Verdadero", "Falso"]);
+            setCorrectIndexes([0]);
+            setMultiCorrect(false);
+        } else if (kind === 'TRUE_FALSE') {
+            // Al salir de verdadero/falso se empieza con opciones en blanco
+            setOptions(["", ""]);
+            setCorrectIndexes([0]);
+            setMultiCorrect(false);
+        }
+
+        if (newKind === 'POLL') {
+            setMultiCorrect(false);
+        }
+
+        setKind(newKind);
+    }
+
     const handleSubmit = async() => {
-        if(!title || options.some(opt => opt.trim() === "")){
+        const usesOptions = kind === 'CHOICE' || kind === 'POLL';   // V/F y número no tienen opciones que rellenar
+
+        if(!title || (usesOptions && options.some(opt => opt.trim() === ""))){
             alert("Completa todos los campos obligatorios");
             return;
+        }
+
+        if (!selectedQuizId) {
+            alert("Elige primero un cuestionario");
+            return;
+        }
+
+        if (kind === 'NUMBER') {
+            const parsed = Number(correctNumber.trim().replace(',', '.'));
+            if (correctNumber.trim() === "" || !Number.isFinite(parsed)) {
+                alert("Escribe el número correcto (por ejemplo 1985 o 12,5)");
+                return;
+            }
         }
 
         // Validar URL si tipo es IMAGE/VIDEO
@@ -390,21 +506,35 @@ function AdminView() {
             }
         }
 
-        if (correctIndexes.length === 0) {
-            alert("Marca al menos una respuesta correcta");
-            return;
-        }
+        if (kind === 'CHOICE') {
+            if (correctIndexes.length === 0) {
+                alert("Marca al menos una respuesta correcta");
+                return;
+            }
 
-        if (correctIndexes.length >= options.length) {
-            alert("Debe quedar al menos una opción incorrecta");
-            return;
+            if (correctIndexes.length >= options.length) {
+                alert("Debe quedar al menos una opción incorrecta");
+                return;
+            }
         }
 
         const questionData = {
-            title, type, options, mediaUrl, timeLimit,
-            correctIndexes,
-            correctIndex: correctIndexes[0]   // compatibilidad con el formato anterior
+            title, type, mediaUrl, timeLimit, kind,
+            quizId: selectedQuizId
         };
+
+        if (kind === 'CHOICE') {
+            questionData.options = options;
+            questionData.correctIndexes = correctIndexes;
+            questionData.correctIndex = correctIndexes[0];   // compatibilidad con el formato anterior
+        } else if (kind === 'TRUE_FALSE') {
+            questionData.options = ["Verdadero", "Falso"];
+            questionData.correctIndexes = [correctIndexes[0] === 1 ? 1 : 0];
+        } else if (kind === 'POLL') {
+            questionData.options = options;   // no hay respuesta correcta
+        } else if (kind === 'NUMBER') {
+            questionData.correctNumber = correctNumber.trim().replace(',', '.');
+        }
         
         try{
             let url = `/api/questions`;
@@ -432,8 +562,11 @@ function AdminView() {
                 alert(editingId ? "Pregunta actualizada correctamente" : "Pregunta guardada correctamente");
                 resetForm(); 
                 fetchQuestions(); 
+                fetchQuizzes();
             } else {
-                alert("Hubo un error en el servidor.");
+                let detail = "";
+                try { detail = (await response.json()).errors?.join("\n") || ""; } catch { /* sin detalle */ }
+                alert("Hubo un error en el servidor." + (detail ? "\n\n" + detail : ""));
             }
         } catch(error){
             console.error("Error de red:", error);
@@ -523,13 +656,22 @@ function AdminView() {
             )}
 
             <div className="header-row">
-                <h1 className="admin-title">
-                    {editingId ? "Editar Pregunta" : "Nueva Pregunta"}
-                </h1>
+                <h1 className="admin-title">Panel de Administración</h1>
                 <button className="btn-logout" onClick={handleLogout}>
                     Cerrar Sesión
                 </button>
             </div>
+
+            <QuizManager
+                quizzes={quizzes}
+                selectedQuizId={selectedQuizId}
+                onSelect={handleSelectQuiz}
+                onChanged={handleQuizzesChanged}
+                fetchWithAuth={fetchWithAuth}
+                apiUrl={API_URL}
+            />
+
+            <hr className="divider"/>
 
             {/* Sección de gestión de jugadores */}
             <div className="players-section">
@@ -549,6 +691,10 @@ function AdminView() {
 
             <hr className="divider"/>
 
+            <h2 className="section-title form-section-title">
+                {editingId ? "Editar Pregunta" : "Nueva Pregunta"}
+            </h2>
+
             <div className="form-group">
                 <label className="form-label">Título de la pregunta:</label>
                 <input 
@@ -561,18 +707,75 @@ function AdminView() {
             </div>
 
             <div className="form-group">
+                <label className="form-label">Tipo de respuesta:</label>
+                <div className="kind-selector">
+                    {KIND_OPTIONS.map((opt) => (
+                        <button
+                            key={opt.value}
+                            type="button"
+                            className={`kind-btn ${kind === opt.value ? 'selected' : ''}`}
+                            onClick={() => handleKindChange(opt.value)}
+                        >
+                            <span className="kind-btn-title">{opt.icon} {opt.label}</span>
+                            <span className="kind-btn-desc">{opt.desc}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {kind === 'TRUE_FALSE' && (
+                <div className="form-group">
+                    <label className="form-label">¿Cuál es la respuesta correcta?</label>
+                    <div className="tf-choice">
+                        {["Verdadero", "Falso"].map((label, i) => (
+                            <label key={label} className={`tf-option ${correctIndexes[0] === i ? 'selected' : ''}`}>
+                                <input
+                                    type="radio"
+                                    name="tfCorrect"
+                                    checked={correctIndexes[0] === i}
+                                    onChange={() => setCorrectIndexes([i])}
+                                />
+                                <span>{i === 0 ? '✅' : '❌'} {label}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {kind === 'NUMBER' && (
+                <div className="form-group">
+                    <label className="form-label">Número correcto:</label>
+                    <input
+                        className="form-input number-correct-input"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Ejemplo: 1985"
+                        value={correctNumber}
+                        onChange={(e) => setCorrectNumber(e.target.value)}
+                    />
+                    <p className="input-hint">
+                        💡 Los equipos escriben un número en el móvil. Los tres más cercanos suman 100, 70 y 40 puntos
+                        (los empates comparten puesto). Se aceptan decimales con coma o con punto.
+                    </p>
+                </div>
+            )}
+
+            {(kind === 'CHOICE' || kind === 'POLL') && (
+            <div className="form-group">
                 <label className="form-label">Opciones de respuesta:</label>
                 <div className="options-list">
                     {options.map((opt, i)=>(
                         <div key={i} className="option-row">
-                            <input 
-                                className="radio-check"
-                                type={multiCorrect ? "checkbox" : "radio"} 
-                                name="correctAnswer" 
-                                title="Marcar como correcta"
-                                checked={correctIndexes.includes(i)}
-                                onChange={() => handleSelectCorrect(i)}
-                            />
+                            {kind === 'CHOICE' && (
+                                <input 
+                                    className="radio-check"
+                                    type={multiCorrect ? "checkbox" : "radio"} 
+                                    name="correctAnswer" 
+                                    title="Marcar como correcta"
+                                    checked={correctIndexes.includes(i)}
+                                    onChange={() => handleSelectCorrect(i)}
+                                />
+                            )}
                             
                             <input 
                                 className="option-input-text"
@@ -591,24 +794,35 @@ function AdminView() {
                     </button>
                 </div>
 
-                <label className="multi-correct-toggle">
-                    <input
-                        type="checkbox"
-                        checked={multiCorrect}
-                        onChange={(e) => handleToggleMulti(e.target.checked)}
-                    />
-                    <span>Esta pregunta tiene más de una respuesta correcta</span>
-                </label>
-                <p className="input-hint">
-                    {multiCorrect
-                        ? `💡 Marca todas las correctas (${correctIndexes.length} marcada${correctIndexes.length === 1 ? '' : 's'}). El jugador elige una y le vale cualquiera de ellas.`
-                        : '💡 Marca con el círculo cuál es la respuesta correcta.'}
-                </p>
+                {kind === 'CHOICE' && (
+                    <>
+                        <label className="multi-correct-toggle">
+                            <input
+                                type="checkbox"
+                                checked={multiCorrect}
+                                onChange={(e) => handleToggleMulti(e.target.checked)}
+                            />
+                            <span>Esta pregunta tiene más de una respuesta correcta</span>
+                        </label>
+                        <p className="input-hint">
+                            {multiCorrect
+                                ? `💡 Marca todas las correctas (${correctIndexes.length} marcada${correctIndexes.length === 1 ? '' : 's'}). El jugador elige una y le vale cualquiera de ellas.`
+                                : '💡 Marca con el círculo cuál es la respuesta correcta.'}
+                        </p>
+                    </>
+                )}
+
+                {kind === 'POLL' && (
+                    <p className="input-hint">
+                        💡 Encuesta: no hay respuesta correcta y no da puntos. Al mostrar los resultados se ve cuántos votaron cada opción.
+                    </p>
+                )}
             </div>
+            )}
 
             <div className="form-group form-row-multi">
                 <div className="flex-1">
-                    <label className="form-label">Tipo de pregunta:</label>
+                    <label className="form-label">Formato de la pregunta:</label>
                     <select 
                         className="form-select"
                         value={type}
@@ -678,7 +892,14 @@ function AdminView() {
 
             <hr className="divider"/>
             
-            <h2 className="questions-title">Preguntas Guardadas ({questionsList.length})</h2>
+            <h2 className="questions-title">
+                Preguntas de «{quizzes.find((quiz) => quiz.id === selectedQuizId)?.name || '...'}» ({questionsList.length})
+            </h2>
+            {selectedQuizId && quizzes.length > 0 && !quizzes.find((quiz) => quiz.id === selectedQuizId)?.isActive && (
+                <p className="input-hint not-in-use-hint">
+                    Este cuestionario todavía no está en uso. Pulsa «Usar en el evento» arriba para jugarlo.
+                </p>
+            )}
             {questionsList.length > 1 && (
                 <p className="input-hint reorder-hint">
                     ↕ Cambia el orden con las flechas ▲ ▼ o arrastrando una pregunta. El orden nuevo se usa al iniciar la próxima partida.
@@ -725,8 +946,12 @@ function AdminView() {
                         <div className="q-info">
                             <strong>{q.title}</strong>
                             <div className="q-meta">
-                                {q.type} • {q.options.length} opciones
-                                {correctCount > 1 ? ` • ${correctCount} correctas` : ''}
+                                {KIND_TAGS[q.kind || 'CHOICE'] && <span className="q-kind-tag">{KIND_TAGS[q.kind || 'CHOICE']}</span>}
+                                {q.type}
+                                {(q.kind === 'NUMBER')
+                                    ? ` • respuesta: ${q.correctNumber}`
+                                    : (q.kind === 'TRUE_FALSE' ? '' : ` • ${q.options.length} opciones`)}
+                                {(q.kind || 'CHOICE') === 'CHOICE' && correctCount > 1 ? ` • ${correctCount} correctas` : ''}
                             </div>
                         </div>
                         <div className="q-actions">

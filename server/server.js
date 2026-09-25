@@ -11,6 +11,8 @@ const { configureCORS } = require('./config/cors');
 
 // --- RUTAS ---
 const questionRoutes = require('./routes/questionRoutes');
+const quizRoutes = require('./routes/quizRoutes');
+const brandingRoutes = require('./routes/brandingRoutes');
 const playerRoutes = require('./routes/playerRoutes');
 const authRoutes = require('./routes/authRoutes');
 
@@ -27,7 +29,7 @@ const { registerAdminHandlers } = require('./sockets/adminHandlers');
 // --- UTILIDADES ---
 const gameStateModule = require('./utils/gameState');
 const { loadQuestions, sendNextQuestion, sendPreviousQuestion } = require('./utils/gameLogics');
-const { backfillQuestionPositions } = require('./utils/questionUtils');
+const { backfillQuestionPositions, ensureDefaultQuiz } = require('./utils/questionUtils');
  
 const port = process.env.PORT;
 
@@ -35,7 +37,8 @@ const port = process.env.PORT;
 const { initializePassword } = require('./utils/passwordManager');
 
 const app = express() // Inicializar express
-app.use(express.json());
+// 1 MB: el logo de un cliente viaja en el JSON (ya reducido por el navegador, ~100-300 KB)
+app.use(express.json({ limit: '1mb' }));
 
 const { corsMiddleware, allowedOrigins } = configureCORS(); 
 app.use(corsMiddleware);
@@ -45,6 +48,7 @@ const server = http.createServer(app); // Creamos el servidor HTTP a partir de E
 const io = configureSocket(server, allowedOrigins);
 
 playerController.setSocketIO(io);
+app.set('io', io);   // para que las rutas puedan avisar a los móviles (p. ej. cambio de marca)
 
 // ---> ESTADO DEL JUEGO (importado desde gameState) <---
 const {
@@ -93,7 +97,9 @@ io.on("connection", (socket) => {
     console.log('✅ Listener de connection registrado');
 
 app.use('/api/auth', authRoutes)
+app.use('/api/branding', brandingRoutes)   // PÚBLICO: logo, color y texto del cuestionario en uso
 app.use('/api/questions', authenticateAdmin ,questionRoutes)
+app.use('/api/quizzes', authenticateAdmin, quizRoutes)
 app.use('/api/players', authenticateAdmin, playerRoutes)
 
 // Servir los archivos estáticos del build de React
@@ -111,8 +117,19 @@ async function startServer() {
         console.log("⏳ Inicializando contraseña de admin...");
         await initializePassword();
 
+        // Migración de datos anteriores: las preguntas que ya existían pasan a un primer
+        // cuestionario "Cuestionario principal" (en uso). Es idempotente.
+        // Si fallara, el juego sigue funcionando con todas las preguntas (modo de emergencia).
+        try {
+            const activeQuiz = await ensureDefaultQuiz();
+            console.log(`📚 Cuestionario en uso: "${activeQuiz.name}"`);
+        } catch (error) {
+            console.error("⚠️ No se pudo preparar el cuestionario por defecto:", error.message);
+        }
+
         // Preguntas creadas antes de existir el orden manual: se les asigna posición 1..N
-        // según su fecha de creación. Si algo falla no es grave (se ordena por fecha).
+        // (dentro de cada cuestionario) según su fecha de creación.
+        // Si algo falla no es grave (se ordena por fecha).
         try {
             const fixed = await backfillQuestionPositions();
             if (fixed > 0) console.log(`🔢 Posiciones de preguntas actualizadas: ${fixed}`);
@@ -128,6 +145,9 @@ async function startServer() {
         });
     } catch (error) {
         console.error("❌ Error fatal al iniciar el servidor:", error);
+        // Salir con error para que la plataforma lo reinicie. Antes el proceso se quedaba
+        // "vivo" sin escuchar en ningún puerto y parecía que el despliegue había ido bien.
+        process.exit(1);
     }
 }
 

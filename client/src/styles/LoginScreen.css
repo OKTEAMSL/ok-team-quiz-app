@@ -24,3 +24,11 @@
         font-size: 0.95rem;
     }
 }
+/* Logo del cliente en la pantalla de entrada */
+.login-logo {
+    display: block;
+    max-width: 220px;
+    max-height: 110px;
+    margin: 0 auto var(--spacing-md) auto;
+    object-fit: contain;
+}

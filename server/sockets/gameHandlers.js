@@ -1,6 +1,8 @@
+const Player = require('../models/Players');
+const { sequelize } = require('../config/db');
 const gameState = require('../utils/gameState');
 const { revertQuestionAwards, stopTimer } = require('../utils/gameLogics');
-const { toClientQuestion, getRevealPayload } = require('../utils/questionUtils');
+const { toClientQuestion, buildReveal, computeNumberRanking, getKind } = require('../utils/questionUtils');
 
 const {
     getGameState,
@@ -9,11 +11,45 @@ const {
     getTimerInterval,
     getRemainingTime,
     getHostSocketId,
+    getAnswers,
     setGameState,
     setRemainingTime,
     setTimerInterval,
+    setCurrentRanking,
+    recordQuestionAward,
     players
 } = gameState;
+
+// Preguntas NUMBER: al mostrar la respuesta se clasifica a los equipos por cercanía y se
+// reparten los puntos (100 / 70 / 40). Devuelve la clasificación.
+const awardNumberPoints = async (io, question, questionIndex) => {
+    const ranking = computeNumberRanking(question, getAnswers());
+    const winners = ranking.filter((row) => row.points > 0);
+
+    // 1) Primero la base de datos, en una transacción (todo o nada). Se suma por nombre,
+    //    así también cobra quien se desconectó mientras tanto. Si falla, no se ha tocado
+    //    nada en memoria y el presentador puede volver a pulsar "Mostrar respuesta".
+    await sequelize.transaction(async (transaction) => {
+        for (const row of winners) {
+            await Player.increment('score', { by: row.points, where: { name: row.name }, transaction });
+        }
+    });
+
+    // 2) Después la memoria
+    for (const row of winners) {
+        const socketId = Object.keys(players).find((id) => players[id].name === row.name);
+        if (socketId) players[socketId].score += row.points;
+
+        // Se recuerda cuánto dio, por si se vuelve atrás y se rejuega la pregunta
+        recordQuestionAward(questionIndex, row.name, row.points);
+    }
+
+    if (winners.length > 0) {
+        io.to('game_room').emit('update_players', Object.values(players));
+    }
+
+    return ranking;
+};
 
 const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion) => {
 
@@ -136,7 +172,9 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
     });
 
     // --- SHOW ANSWER ---
-    socket.on('show_answer', () => {
+    socket.on('show_answer', async () => {
+        let revealSent = false;
+
         try{
             console.log('📺 Mostrando respuesta correcta...');
 
@@ -150,36 +188,53 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
                 console.log('⏰ Timer cancelado al mostrar respuesta');
             }
             
+            // Se marca de inmediato: un segundo clic mientras se calculan los puntos se descarta
             setGameState('SHOW_ANSWER');
             
-            const currentQ = getQuestions()[getCurrentQuestionIndex() - 1];
+            const questionIndex = getCurrentQuestionIndex() - 1;
+            const currentQ = getQuestions()[questionIndex];
             
             if (currentQ) {
-                const { correctIndexes, correctOptions } = getRevealPayload(currentQ);
+                let ranking = null;
+
+                if (getKind(currentQ) === 'NUMBER') {
+                    ranking = await awardNumberPoints(io, currentQ, questionIndex);
+                    setCurrentRanking(ranking);
+
+                    // Durante los cálculos el presentador pudo haber navegado a otra pregunta
+                    if (getGameState() !== 'SHOW_ANSWER' || getCurrentQuestionIndex() - 1 !== questionIndex) {
+                        console.log('⚠️ La pregunta cambió mientras se calculaban los puntos; no se muestra la respuesta');
+                        return;
+                    }
+                }
+
+                const { host, phone } = buildReveal(currentQ, getAnswers(), ranking);
                 const hostSocket = getHostSocketId();
+                revealSent = true;
                 
-                // Al HOST: la respuesta (o respuestas) correcta(s)
+                // Al HOST: la respuesta (o respuestas) correcta(s) / los resultados
                 if (hostSocket) {
-                    io.to(hostSocket).emit('show_correct_answer', {
-                        correctIndex: correctIndexes[0],
-                        correctOption: correctOptions[0],
-                        correctIndexes,
-                        correctOptions
-                    });
+                    io.to(hostSocket).emit('show_correct_answer', host);
                 } else {
                     console.log('❌ HOST no encontrado en players');
                 }
 
-                // A los móviles de los jugadores: SOLO el texto de la(s) respuesta(s).
-                // Nunca se envía la pregunta. Se emite ANTES del cambio de estado para que
-                // el dato ya esté en el móvil cuando la pantalla pase a "respuesta".
-                socket.to('game_room').emit('answer_revealed', { correctOptions });
+                // A los móviles de los jugadores: SOLO la respuesta (o los resultados de la
+                // encuesta). Nunca se envía la pregunta. Se emite ANTES del cambio de estado
+                // para que el dato ya esté en el móvil cuando la pantalla pase a "respuesta".
+                socket.to('game_room').emit('answer_revealed', phone);
             }
             
             io.to('game_room').emit('game_state', getGameState());
             console.log('✅ Respuesta correcta mostrada');
         } catch (error){
             console.error('❌ Error en show_answer:', error.message);
+
+            // Si falló antes de mostrar nada, se vuelve a "en curso" para poder reintentarlo
+            if (!revealSent && getGameState() === 'SHOW_ANSWER') {
+                setGameState('QUESTION_ACTIVE');
+            }
+
             io.to('game_room').emit('error', { 
                 message: 'Error al mostrar respuesta'
             });

@@ -987,3 +987,138 @@
 .correct-answer-display + .correct-answer-display {
     margin-top: var(--spacing-sm);
 }
+
+
+/* ===== Logo del cliente ===== */
+
+.host-logo {
+    object-fit: contain;
+}
+
+.host-logo-big {
+    display: block;
+    max-height: 110px;
+    max-width: 320px;
+    margin: 0 auto var(--spacing-md) auto;
+}
+
+.host-logo-corner {
+    position: fixed;
+    top: 20px;
+    left: 24px;
+    max-height: 56px;
+    max-width: 180px;
+    z-index: 5;
+}
+
+/* ===== Tipos de pregunta ===== */
+
+.kind-badge {
+    display: inline-block;
+    margin-left: var(--spacing-sm);
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+    background: var(--primary-blue);
+    color: white;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+}
+
+.kind-hint {
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #4b5563;
+    margin: var(--spacing-md) 0 0 0;
+}
+
+.answered-counter {
+    text-align: center;
+    color: #6b7280;
+    font-size: 1.1rem;
+    margin: var(--spacing-md) 0 0 0;
+}
+
+/* Número más cercano */
+.number-reveal {
+    font-size: 2.6rem;
+}
+
+.number-ranking {
+    list-style: none;
+    padding: 0;
+    margin: var(--spacing-lg) 0 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.number-ranking-row {
+    display: grid;
+    grid-template-columns: 2.2em 1fr auto auto;
+    align-items: center;
+    gap: var(--spacing-md);
+    background: white;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 1.2rem;
+    text-align: left;
+}
+
+.number-team {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.number-guess small {
+    color: #6b7280;
+}
+
+.number-points {
+    color: var(--color-success);
+}
+
+.number-nobody,
+.number-answered {
+    text-align: center;
+    color: #6b7280;
+    margin: var(--spacing-md) 0 0 0;
+}
+
+/* Encuesta */
+.poll-reveal {
+    text-align: left;
+}
+
+.poll-host-row {
+    margin-top: var(--spacing-md);
+}
+
+.poll-host-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.poll-host-numbers {
+    color: var(--primary-blue);
+    flex-shrink: 0;
+}
+
+.poll-host-track {
+    height: 22px;
+    background: #e5e7eb;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.poll-host-fill {
+    height: 100%;
+    background: var(--primary-blue);
+    border-radius: var(--radius-full);
+    transition: width 0.8s ease;
+}

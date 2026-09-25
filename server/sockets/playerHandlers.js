@@ -1,7 +1,7 @@
 const Player = require('../models/Players');
 const gameState = require('../utils/gameState');
 const { emitQuestionPosition } = require('../utils/gameLogics');
-const { toClientQuestion, getRevealPayload } = require('../utils/questionUtils');
+const { toClientQuestion, buildReveal } = require('../utils/questionUtils');
 
 const {
     getGameState,
@@ -9,6 +9,8 @@ const {
     getQuestions,
     getGameSessionId,
     getRemainingTime,
+    getAnswers,
+    getCurrentRanking,
     wasAnswered,
     players,
     playerTimeouts
@@ -37,13 +39,8 @@ const syncClientToCurrentPhase = (io, socket, isHost) => {
             }
 
             if (state === 'SHOW_ANSWER') {
-                const { correctIndexes, correctOptions } = getRevealPayload(currentQ);
-                socket.emit('show_correct_answer', {
-                    correctIndex: correctIndexes[0],
-                    correctOption: correctOptions[0],
-                    correctIndexes,
-                    correctOptions
-                });
+                const { host } = buildReveal(currentQ, getAnswers(), getCurrentRanking());
+                socket.emit('show_correct_answer', host);
             }
         }
         return;
@@ -53,8 +50,8 @@ const syncClientToCurrentPhase = (io, socket, isHost) => {
         socket.emit('new_question', toClientQuestion(currentQ));
         socket.emit('timer_update', { remainingTime: getRemainingTime() });
     } else if (state === 'SHOW_ANSWER') {
-        const { correctOptions } = getRevealPayload(currentQ);
-        socket.emit('answer_revealed', { correctOptions });
+        const { phone } = buildReveal(currentQ, getAnswers(), getCurrentRanking());
+        socket.emit('answer_revealed', phone);
     }
 };
 

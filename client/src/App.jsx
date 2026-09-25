@@ -4,6 +4,7 @@ import { useSocket } from './hooks/useSocket';
 import { useGameSession } from './hooks/useGameSession';
 import { useGameSocket } from './hooks/useGameSocket';
 import { useWakeLock } from './hooks/useWakeLock';
+import { useBranding } from './hooks/useBranding';
 
 import AnswerRevealScreen from './components/screens/AnswerRevealScreen';
 import GameOverScreen from './components/screens/GameOverScreen';
@@ -18,6 +19,7 @@ import './styles/App.css';
 function App() {
   const { socket, isConnected } = useSocket();
   const { requestWakeLock, releaseWakeLock } = useWakeLock();
+  useBranding();   // aplica el color del cliente en toda la app (y carga su logo)
 
   // Estados
   const [inside, setInside] = useState(false);
@@ -97,6 +99,7 @@ function App() {
     window.location.reload(); 
   }
 
+  // 'i' es el índice de la opción elegida o, en las preguntas de número, el número escrito
   const submitAnswer = (i) => {
     // Validar socket antes de emitir
     if (!socket || !isConnected) {
@@ -159,7 +162,7 @@ function App() {
       <AnswerRevealScreen
         playerName={nameGroup}
         score={scoreGroup}
-        correctOptions={revealedAnswers}
+        reveal={revealedAnswers}
       />
     );
   }

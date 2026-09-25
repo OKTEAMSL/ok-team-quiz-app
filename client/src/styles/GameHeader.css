@@ -15,9 +15,27 @@
 }
 
 .player-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
     font-weight: 600;
     color: #1f2937;
     font-size: 1.1rem;
+}
+
+.player-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Logo del cliente junto al nombre del equipo */
+.header-logo {
+    height: 34px;
+    max-width: 90px;
+    object-fit: contain;
+    flex-shrink: 0;
 }
 
 .score-badge {

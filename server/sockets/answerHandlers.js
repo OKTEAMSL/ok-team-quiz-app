@@ -1,6 +1,6 @@
 const Player = require('../models/Players');
 const gameState = require('../utils/gameState');
-const { getCorrectIndexes } = require('../utils/questionUtils');
+const { getCorrectIndexes, getKind } = require('../utils/questionUtils');
 
 const {
     getGameState,
@@ -16,6 +16,13 @@ const {
     wasAnswered,
     players
 } = gameState;
+
+// Convierte lo que llega del móvil en un número (acepta "12,5" y "12.5"). NaN si no es válido.
+const parseNumberAnswer = (raw) => {
+    if (typeof raw === 'number') return raw;
+    if (typeof raw !== 'string' || raw.trim() === '') return NaN;
+    return Number(raw.trim().replace(',', '.'));
+};
 
 const registerAnswerHandlers = (io, socket) => {
 
@@ -47,71 +54,76 @@ const registerAnswerHandlers = (io, socket) => {
                 return;
             }
 
-            player.hasAnswered = true;
-            markAnswered(player.name);
             const questionInPlay = getQuestions()[getCurrentQuestionIndex() - 1]; 
 
             if(!questionInPlay){
                 throw new Error('No hay pregunta activa');
             }
 
-            // Calcular puntaje. La pregunta puede tener 1 o más respuestas correctas:
-            // cualquiera de ellas es válida.
-            const correctIndexes = getCorrectIndexes(questionInPlay);
-            const isCorrect = correctIndexes.includes(data.answer);
-            let pointsAwarded = 0;
+            const kind = getKind(questionInPlay);
 
-            // Si responde correcto primero
-            if (isCorrect) {
-                if (getFirstCorrectAnswer() === null) {
-                    setFirstCorrectAnswer(socket.id);
-                    pointsAwarded = 100;
-                    console.log(`🥇 ${player.name} respondió primero: +100 puntos`);
-                } else {
-                    // Respuestas correctas subsecuentes
-                    pointsAwarded = 90;
-                    console.log(`✅ ${player.name} respondió correcto: +90 puntos`);
+            // Se valida la respuesta ANTES de darla por enviada: una respuesta inválida
+            // no debe dejar al equipo sin poder volver a contestar.
+            let value;
+
+            if (kind === 'NUMBER') {
+                value = parseNumberAnswer(data.answer);
+
+                if (!Number.isFinite(value) || Math.abs(value) > 1e15) {
+                    socket.emit('error', { message: 'Escribe un número válido' });
+                    return;
                 }
+            } else {
+                value = data.answer;
 
-                player.score += pointsAwarded;
-
-                // Se recuerda cuánto dio esta pregunta, por si se vuelve atrás y se rejuega
-                recordQuestionAward(getCurrentQuestionIndex() - 1, player.name, pointsAwarded);
+                if (!Number.isInteger(value) || value < 0 || value >= questionInPlay.options.length) {
+                    socket.emit('error', { message: 'Respuesta no válida' });
+                    return;
+                }
             }
 
-            if (player.dbId) {
-                await Player.update(
-                    { score: player.score },
-                    { where: { id: player.dbId } }
-                );
+            player.hasAnswered = true;
+            markAnswered(player.name, value);
+
+            // Puntos al momento: solo en opción múltiple y verdadero/falso.
+            //  - NUMBER: los puntos se dan al mostrar la respuesta (depende de quién quedó más cerca).
+            //  - POLL: no hay puntos.
+            if (kind === 'CHOICE' || kind === 'TRUE_FALSE') {
+                // La pregunta puede tener 1 o más respuestas correctas: cualquiera es válida.
+                const isCorrect = getCorrectIndexes(questionInPlay).includes(value);
+
+                if (isCorrect) {
+                    let pointsAwarded;
+
+                    // Si responde correcto primero
+                    if (getFirstCorrectAnswer() === null) {
+                        setFirstCorrectAnswer(socket.id);
+                        pointsAwarded = 100;
+                        console.log(`🥇 ${player.name} respondió primero: +100 puntos`);
+                    } else {
+                        // Respuestas correctas subsecuentes
+                        pointsAwarded = 90;
+                        console.log(`✅ ${player.name} respondió correcto: +90 puntos`);
+                    }
+
+                    player.score += pointsAwarded;
+
+                    // Se recuerda cuánto dio esta pregunta, por si se vuelve atrás y se rejuega
+                    recordQuestionAward(getCurrentQuestionIndex() - 1, player.name, pointsAwarded);
+
+                    if (player.dbId) {
+                        await Player.update(
+                            { score: player.score },
+                            { where: { id: player.dbId } }
+                        );
+                    }
+                }
+            } else {
+                console.log(`📝 ${player.name} respondió (${kind}): ${value}`);
             }
-
-            const result = { 
-                correct: isCorrect, 
-                wasFirst: isCorrect && getFirstCorrectAnswer() === socket.id
-            };
-
-            if(isCorrect){
-                result.correctIndex = questionInPlay.correctIndex;
-            };
-
-            // Enviar resultado individual
-            //socket.emit('answer_result', result)
             
             // Actualizar Host
             io.to('game_room').emit('update_players', Object.values(players))
-
-            // --- LÓGICA DE AVANCE AUTOMÁTICO ---
-            // const allPlayers = Object.values(players).filter(p => p.name !== 'HOST');
-            // const totalPlayers = allPlayers.length;
-            // const answersCount = allPlayers.filter(p => p.hasAnswered).length;
-
-            // if (totalPlayers > 0 && answersCount === totalPlayers) {
-            //     console.log("🚀 Todos respondieron. Avanzando...");
-            //     setTimeout(() => {
-            //         sendNextQuestion();
-            //     }, 3000); 
-            // }
 
             // Cancelar timer cuando todos hayan respondido antes de acabar el tiempo
             const allPlayers = Object.values(players).filter(p => p.name !== 'HOST');
@@ -144,4 +156,3 @@ const registerAnswerHandlers = (io, socket) => {
 };
 
 module.exports = {registerAnswerHandlers};
-

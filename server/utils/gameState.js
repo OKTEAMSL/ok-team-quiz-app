@@ -14,10 +14,16 @@ let remainingTime = 0;
 // Sirve para no sumar dos veces si el presentador vuelve atrás y rejuega una pregunta.
 let questionAwards = {};
 
-// Nombres de los jugadores que ya respondieron la pregunta actual. Va aparte de
+// Qué respondió cada jugador en la pregunta actual: { nombre -> respuesta }
+// (el índice de la opción elegida, o el número escrito). Va aparte de
 // players[id].hasAnswered porque un jugador que se desconecta más de 30 s se borra de
 // 'players' y, al volver, podría responder de nuevo (y sumar puntos dos veces).
-const answeredNames = new Set();
+// Además alimenta los resultados de las encuestas y la clasificación de las preguntas NUMBER.
+const answers = new Map();
+
+// Clasificación ya calculada (y ya puntuada) de la pregunta NUMBER en pantalla.
+// Se guarda para poder reenviarla a quien se reconecta mientras se muestra la respuesta.
+let currentRanking = null;
 
 // Getters
 const getServerRunId = () => {
@@ -82,10 +88,14 @@ const resetQuestionAwards = () => {
     questionAwards = {};
 }
 
-// --- Quién ya respondió la pregunta actual ---
-const markAnswered = (playerName) => { answeredNames.add(playerName); }
-const wasAnswered = (playerName) => answeredNames.has(playerName);
-const resetAnswered = () => { answeredNames.clear(); }
+// --- Quién respondió la pregunta actual, y qué ---
+const markAnswered = (playerName, value) => { answers.set(playerName, value); }
+const wasAnswered = (playerName) => answers.has(playerName);
+const getAnswers = () => answers;
+const resetAnswered = () => { answers.clear(); currentRanking = null; }
+
+const getCurrentRanking = () => currentRanking;
+const setCurrentRanking = (ranking) => { currentRanking = ranking; }
 
 // Setters
 const setGameSessionId = (id) => {
@@ -141,7 +151,8 @@ const resetGame = () => {
     }
     remainingTime = 0;
     questionAwards = {};
-    answeredNames.clear();
+    answers.clear();
+    currentRanking = null;
 }
 
 module.exports = {
@@ -174,7 +185,10 @@ module.exports = {
     resetQuestionAwards,
     markAnswered,
     wasAnswered,
+    getAnswers,
     resetAnswered,
+    getCurrentRanking,
+    setCurrentRanking,
     
     // Exportar referencias directas (para modificación)
     players,

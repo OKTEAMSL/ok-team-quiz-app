@@ -90,7 +90,7 @@
 }
 
 .btn-login:hover {
-    background: #0077cc;
+    background: var(--primary-blue-dark);
 }
 
 .btn-login:active {

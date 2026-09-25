@@ -1,6 +1,10 @@
 const Question = require('../models/Questions.js')
+const Quiz = require('../models/Quiz');
 const { sequelize } = require('../config/db');
-const { findAllOrdered } = require('../utils/questionUtils');
+const { findAllOrdered, getActiveQuiz, KINDS, TRUE_FALSE_OPTIONS } = require('../utils/questionUtils');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value) => typeof value === 'string' && UUID_RE.test(value);
 
 // Funciones de validacion./ 
 
@@ -58,8 +62,23 @@ function validateQuestionData(data) {
         errors.push('El tipo debe ser TEXT, IMAGE o VIDEO');
     }
     
+    // Validar el tipo de respuesta (opción múltiple, verdadero/falso, número o encuesta)
+    if (data.kind === undefined || data.kind === null || data.kind === '') {
+        data.kind = 'CHOICE';   // por defecto (y para clientes antiguos que no lo envían)
+    } else if (!KINDS.includes(data.kind)) {
+        errors.push('El tipo de respuesta debe ser CHOICE, TRUE_FALSE, NUMBER o POLL');
+        data.kind = 'CHOICE';
+    }
+    const kind = data.kind;
+
     // Validar options
-    if (!data.options) {
+    if (kind === 'TRUE_FALSE') {
+        // Siempre son estas dos: no se aceptan otras
+        data.options = [...TRUE_FALSE_OPTIONS];
+    } else if (kind === 'NUMBER') {
+        // El equipo escribe un número: no hay opciones que elegir
+        data.options = [];
+    } else if (!data.options) {
         errors.push('Las opciones son obligatorias');
     } else if (!Array.isArray(data.options)) {
         errors.push('Las opciones deben ser un array');
@@ -97,44 +116,78 @@ function validateQuestionData(data) {
         data.options = sanitizedOptions;
     }
     
-    // Validar respuestas correctas (1 o más).
-    // Acepta correctIndexes (array) y, por compatibilidad, correctIndex (número).
-    let rawCorrect = data.correctIndexes;
-    if (rawCorrect === undefined || rawCorrect === null) {
-        rawCorrect = (data.correctIndex !== undefined && data.correctIndex !== null)
-            ? [data.correctIndex]
-            : [];
-    }
+    // Validar la respuesta correcta según el tipo
+    const rawNumber = data.correctNumber;   // se lee ANTES de limpiarlo
+    data.correctNumber = null;
 
-    if (!Array.isArray(rawCorrect) || rawCorrect.length === 0) {
-        errors.push('Debe indicar cuál es la respuesta correcta');
+    if (kind === 'POLL') {
+        // Encuesta: no hay respuesta correcta
         data.correctIndexes = [];
-    } else {
-        const optionCount = Array.isArray(data.options) ? data.options.length : 0;
-        const parsed = rawCorrect.map((v) => Number(v));
+        data.correctIndex = 0;   // la columna no admite null; no se usa
+    } else if (kind === 'NUMBER') {
+        data.correctIndexes = [];
+        data.correctIndex = 0;   // la columna no admite null; no se usa
 
-        if (parsed.some((n) => !Number.isInteger(n))) {
-            errors.push('Los índices de respuesta correcta deben ser números enteros');
-        } else if (parsed.some((n) => n < 0)) {
-            errors.push('El índice de respuesta correcta no puede ser negativo');
-        } else if (optionCount && parsed.some((n) => n >= optionCount)) {
-            errors.push(`Hay un índice de respuesta correcta fuera de rango. Hay ${optionCount} opciones.`);
+        const isEmpty = rawNumber === undefined || rawNumber === null ||
+            (typeof rawNumber === 'string' && rawNumber.trim() === '');
+
+        if (isEmpty) {
+            errors.push('Debe indicar cuál es el número correcto');
+        } else if (typeof rawNumber !== 'number' && typeof rawNumber !== 'string') {
+            errors.push('El número correcto no es válido');
         } else {
-            // Sin repetidos y ordenados
-            const unique = [...new Set(parsed)].sort((a, b) => a - b);
+            const parsedNumber = Number(typeof rawNumber === 'string' ? rawNumber.trim().replace(',', '.') : rawNumber);
 
-            if (optionCount && unique.length >= optionCount) {
-                errors.push('Debe quedar al menos una opción incorrecta');
+            if (!Number.isFinite(parsedNumber) || Math.abs(parsedNumber) > 1e15) {
+                errors.push('El número correcto no es válido');
+            } else {
+                data.correctNumber = parsedNumber;
             }
-
-            data.correctIndexes = unique;
         }
-    }
+    } else {
+        // CHOICE / TRUE_FALSE: 1 o más correctas. Acepta correctIndexes (array) y, por
+        // compatibilidad, correctIndex (número).
+        let rawCorrect = data.correctIndexes;
+        if (rawCorrect === undefined || rawCorrect === null) {
+            rawCorrect = (data.correctIndex !== undefined && data.correctIndex !== null)
+                ? [data.correctIndex]
+                : [];
+        }
 
-    // correctIndex = primera respuesta correcta (compatibilidad con código/datos antiguos)
-    data.correctIndex = Array.isArray(data.correctIndexes) && data.correctIndexes.length > 0
-        ? data.correctIndexes[0]
-        : 0;
+        if (!Array.isArray(rawCorrect) || rawCorrect.length === 0) {
+            errors.push('Debe indicar cuál es la respuesta correcta');
+            data.correctIndexes = [];
+        } else {
+            const optionCount = Array.isArray(data.options) ? data.options.length : 0;
+            const parsed = rawCorrect.map((v) => Number(v));
+
+            if (parsed.some((n) => !Number.isInteger(n))) {
+                errors.push('Los índices de respuesta correcta deben ser números enteros');
+            } else if (parsed.some((n) => n < 0)) {
+                errors.push('El índice de respuesta correcta no puede ser negativo');
+            } else if (optionCount && parsed.some((n) => n >= optionCount)) {
+                errors.push(`Hay un índice de respuesta correcta fuera de rango. Hay ${optionCount} opciones.`);
+            } else {
+                // Sin repetidos y ordenados
+                const unique = [...new Set(parsed)].sort((a, b) => a - b);
+
+                if (kind === 'TRUE_FALSE' && unique.length !== 1) {
+                    errors.push('En verdadero/falso hay que elegir una sola respuesta correcta');
+                }
+
+                if (optionCount && unique.length >= optionCount) {
+                    errors.push('Debe quedar al menos una opción incorrecta');
+                }
+
+                data.correctIndexes = unique;
+            }
+        }
+
+        // correctIndex = primera respuesta correcta (compatibilidad con código/datos antiguos)
+        data.correctIndex = Array.isArray(data.correctIndexes) && data.correctIndexes.length > 0
+            ? data.correctIndexes[0]
+            : 0;
+    }
 
     // Validar tiempo límite (5 a 120 segundos). Se valida aquí para responder 400
     // con un mensaje claro en lugar de un error 500 del modelo.
@@ -163,18 +216,33 @@ function validateQuestionData(data) {
     
     // Solo se devuelven los campos permitidos. Así nadie puede cambiar 'position', 'id'
     // o fechas desde el body, y editar una pregunta nunca altera su lugar en el orden.
-    const { title, type, options, mediaUrl, correctIndex, correctIndexes, timeLimit } = data;
+    const { title, type, options, mediaUrl, correctIndex, correctIndexes, timeLimit, kind: questionKind, correctNumber } = data;
 
     return {
         isValid: errors.length === 0,
         errors: errors,
-        data: { title, type, options, mediaUrl, correctIndex, correctIndexes, timeLimit }
+        data: {
+            title, type, options, mediaUrl, correctIndex, correctIndexes, timeLimit,
+            kind: questionKind, correctNumber
+        }
     };
 }
 
+// Devuelve el cuestionario indicado (?quizId=) o, si no se indica, el que está en uso.
+const resolveQuizId = async (quizId) => {
+    if (quizId) return quizId;
+    const active = await getActiveQuiz();
+    return active ? active.id : undefined;
+};
+
 exports.getQuestion = async(req, res) => {
  try{
-    const question = await findAllOrdered();
+    if (req.query.quizId && !isUuid(req.query.quizId)) {
+        return res.status(400).json({ message: 'quizId no válido' });
+    }
+
+    const quizId = await resolveQuizId(req.query.quizId);
+    const question = await findAllOrdered(quizId);
     return res.status(200).json(question);
  }catch(error){
     console.error('Error al obtener preguntas:', error);
@@ -193,10 +261,25 @@ exports.createQuestion = async(req, res) => {
          });
       }
 
-      // La nueva pregunta va al final de la lista
-      const lastPosition = await Question.max('position');
+      // Cuestionario al que se añade (por defecto, el que está en uso)
+      if (req.body.quizId && !isUuid(req.body.quizId)) {
+         return res.status(400).json({ message: 'quizId no válido' });
+      }
+
+      const quizId = await resolveQuizId(req.body.quizId);
+
+      if (quizId) {
+         const quiz = await Quiz.findByPk(quizId);
+         if (!quiz) {
+            return res.status(404).json({ message: 'Cuestionario no encontrado' });
+         }
+      }
+
+      // La nueva pregunta va al final de la lista de SU cuestionario
+      const lastPosition = await Question.max('position', { where: quizId ? { quizId } : {} });
       const newQuestion = await Question.create({
          ...validation.data,
+         quizId: quizId || null,
          position: (lastPosition || 0) + 1
       });
       return res.status(201).json(newQuestion)
@@ -276,10 +359,25 @@ exports.reorderQuestions = async(req, res) => {
          return res.status(400).json({ message: 'La lista contiene IDs repetidos' });
       }
 
-      // La lista debe coincidir exactamente con las preguntas existentes. Si alguien
+      if (ids.some((id) => !isUuid(id))) {
+         return res.status(400).json({ message: 'La lista contiene IDs no válidos' });
+      }
+
+      // El cuestionario se deduce de las propias preguntas
+      const first = await Question.findByPk(ids[0]);
+
+      if (!first) {
+         return res.status(409).json({
+            message: 'La lista de preguntas cambió. Recarga la página e inténtalo de nuevo.'
+         });
+      }
+
+      const quizId = first.quizId || null;
+
+      // La lista debe coincidir exactamente con las preguntas de ese cuestionario. Si alguien
       // añadió/borró una pregunta mientras tanto, se pide recargar en vez de guardar
       // un orden incompleto.
-      const existing = await Question.findAll({ attributes: ['id'] });
+      const existing = await Question.findAll({ where: { quizId }, attributes: ['id'] });
       const existingIds = new Set(existing.map((q) => q.id));
 
       if (existingIds.size !== ids.length || ids.some((id) => !existingIds.has(id))) {
@@ -297,7 +395,7 @@ exports.reorderQuestions = async(req, res) => {
          }
       });
 
-      const ordered = await findAllOrdered();
+      const ordered = await findAllOrdered(quizId || undefined);
       return res.status(200).json(ordered);
 
    }catch(error){

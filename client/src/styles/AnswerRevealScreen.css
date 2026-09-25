@@ -50,3 +50,66 @@
         padding: var(--spacing-lg) var(--spacing-md);
     }
 }
+
+/* --- Pregunta de número --- */
+.reveal-number {
+    font-size: 3rem;
+    letter-spacing: 0.02em;
+}
+
+/* --- Resultados de una encuesta --- */
+.reveal-label-poll {
+    color: var(--primary-blue);
+}
+
+.reveal-poll {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    text-align: left;
+}
+
+.poll-row {
+    background: white;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.poll-row-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.poll-option {
+    overflow-wrap: anywhere;
+}
+
+.poll-percent {
+    color: var(--primary-blue);
+    flex-shrink: 0;
+}
+
+.poll-bar-track {
+    height: 12px;
+    background: #e5e7eb;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.poll-bar-fill {
+    height: 100%;
+    background: var(--primary-blue);
+    border-radius: var(--radius-full);
+    transition: width 0.6s ease;
+}
+
+.poll-votes {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
