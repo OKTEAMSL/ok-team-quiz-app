@@ -21,10 +21,11 @@ const playerController = require('./controllers/player.controller');
 const { authenticateAdmin } = require('./middleware/auth');
 
 // --- HANDLERS DE SOCKETS
-const { registerPlayerHandlers } = require('./sockets/playerHandlers');
+const { registerPlayerHandlers, syncClientToCurrentPhase } = require('./sockets/playerHandlers');
 const { registerGameHandlers } = require('./sockets/gameHandlers');
 const { registerAnswerHandlers } = require('./sockets/answerHandlers');
 const { registerAdminHandlers } = require('./sockets/adminHandlers');
+const { registerSocketAuth } = require('./sockets/socketAuth');
 
 // --- UTILIDADES ---
 const gameStateModule = require('./utils/gameState');
@@ -35,6 +36,16 @@ const port = process.env.PORT;
 
 // Validar contraseña de admin
 const { initializePassword } = require('./utils/passwordManager');
+
+// JWT_SECRET es lo que da validez a los tokens de administrador (login, panel de admin,
+// y ahora también el control del juego por socket). Antes, si faltaba, el código usaba en
+// silencio un secreto de repuesto escrito en el propio código fuente — cualquiera que
+// leyera el repositorio podía fabricar un token de administrador válido. Ahora, si falta,
+// el servidor no arranca: es mejor un fallo visible al desplegar que una brecha silenciosa.
+if (!process.env.JWT_SECRET) {
+    console.error('❌ Falta la variable de entorno JWT_SECRET. El servidor no puede arrancar sin ella.');
+    process.exit(1);
+}
 
 const app = express() // Inicializar express
 // 1 MB: el logo de un cliente viaja en el JSON (ya reducido por el navegador, ~100-300 KB)
@@ -87,6 +98,7 @@ io.on("connection", (socket) => {
     
     // --- Handlers ---
     console.log('🔧 Registrando handlers para socket:', socket.id);
+    registerSocketAuth(io, socket, { getGameState: gameStateModule.getGameState, getPlayers: gameStateModule.getPlayers, syncClientToCurrentPhase });
     registerPlayerHandlers(io, socket);
     registerGameHandlers(io, socket, sendNextQuestion, sendPreviousQuestion);
     registerAnswerHandlers(io, socket);

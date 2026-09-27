@@ -3,7 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { validatePassword, isUsingDefaultPassword } = require('../utils/passwordManager');
-const { authenticateAdmin } = require('../middleware/auth');
+const { authenticateAdmin, JWT_SECRET } = require('../middleware/auth');
 
 // Rate Limiter
 const loginLimiter = rateLimit({
@@ -43,7 +43,7 @@ router.post('/login', loginLimiter, async (req, res) => {  // ← async
         
         const token = jwt.sign(
             { role: 'admin', timestamp: Date.now() },
-            process.env.JWT_SECRET || 'fallback-secret-key',
+            JWT_SECRET,
             { expiresIn: '24h' }
         );
 

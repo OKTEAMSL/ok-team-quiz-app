@@ -1,6 +1,7 @@
 const Player = require('../models/Players');
 const gameState = require('../utils/gameState');
 const { emitQuestionPosition } = require('../utils/gameLogics');
+const { isAdminSocket } = require('./socketAuth');
 
 const {
     getTimerInterval,
@@ -21,6 +22,8 @@ const registerAdminHandlers = (io, socket, loadQuestions) => {
 
     // --- RESET GAME ---
     socket.on('reset_game', async (data) => { 
+        if (!isAdminSocket(socket)) return;
+
         try{
         const cleanPlayers = data?.cleanPlayers || false;
         

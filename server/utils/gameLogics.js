@@ -4,11 +4,11 @@ const gameState = require('./gameState');
 const { findAllOrdered, getActiveQuiz, toClientQuestion } = require('./questionUtils');
 
 const {
+    PRESENTER_ROOM,
     getCurrentQuestionIndex,
     getQuestions,
     getGameState,
     getTimerInterval,
-    getHostSocketId,
     setQuestions,
     setGameState,
     setCurrentQuestionIndex,
@@ -43,18 +43,20 @@ const stopTimer = () => {
     setRemainingTime(0);
 };
 
-// --- Informar al HOST en qué pregunta está (número actual y total) ---
+// --- Informar de en qué pregunta se está (número actual y total) ---
+// Sin 'socketId', se manda a TODOS los que están presentando (Host y, si está abierto, el
+// panel de control de Admin) — antes solo llegaba a un único socket "HOST".
 const emitQuestionPosition = (io, socketId) => {
-    const target = socketId || getHostSocketId();
-    if (!target) return;
+    const payload = { number: getCurrentQuestionIndex(), total: getQuestions().length };
 
-    io.to(target).emit('question_position', {
-        number: getCurrentQuestionIndex(),
-        total: getQuestions().length
-    });
+    if (socketId) {
+        io.to(socketId).emit('question_position', payload);
+    } else {
+        io.to(PRESENTER_ROOM).emit('question_position', payload);
+    }
 };
 
-// --- Presentar una pregunta (la deja en estado BLOQUEADO, solo visible para el HOST) ---
+// --- Presentar una pregunta (la deja en estado BLOQUEADO, solo visible para quien presenta) ---
 // Lo usan tanto "siguiente" como "anterior".
 const presentQuestion = (io, questionIndex) => {
     const question = getQuestions()[questionIndex];
@@ -77,15 +79,11 @@ const presentQuestion = (io, questionIndex) => {
     // Enviar el estado a todos
     io.to('game_room').emit('game_state', getGameState());
 
-    // Envía la pregunta solo al HOST
-    const hostSocket = getHostSocketId();
-    if (hostSocket) {
-        emitQuestionPosition(io, hostSocket);
-        io.to(hostSocket).emit('new_question', toClientQuestion(question));
-        console.log(`   ✅ Pregunta ${questionIndex + 1}/${getQuestions().length} enviada al HOST`);
-    } else {
-        console.log('   ❌ HOST no encontrado');
-    }
+    // Envía la pregunta a quien está presentando (Host y, si está abierto, el panel de
+    // control de Admin). Antes solo llegaba al socket del jugador "HOST".
+    emitQuestionPosition(io);
+    io.to(PRESENTER_ROOM).emit('new_question', toClientQuestion(question));
+    console.log(`   ✅ Pregunta ${questionIndex + 1}/${getQuestions().length} enviada a quien presenta`);
 };
 
 // --- Avanzar ---
@@ -100,14 +98,9 @@ const goNext = async (io) => {
         if (getQuestions().length === 0) {
             console.log('⚠️ No hay preguntas cargadas en BD');
 
-            const hostSocket = getHostSocketId();
-            if (hostSocket) {
-                io.to(hostSocket).emit('error_message', {
-                    message: 'No hay preguntas cargadas. Crea preguntas desde el panel de administración primero.'
-                });
-            } else {
-                console.log('❌ HOST no encontrado en players');
-            }
+            io.to(PRESENTER_ROOM).emit('error_message', {
+                message: 'No hay preguntas cargadas. Crea preguntas desde el panel de administración primero.'
+            });
             return;
         }
     }

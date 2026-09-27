@@ -3,14 +3,15 @@ const { sequelize } = require('../config/db');
 const gameState = require('../utils/gameState');
 const { revertQuestionAwards, stopTimer } = require('../utils/gameLogics');
 const { toClientQuestion, buildReveal, computeNumberRanking, getKind } = require('../utils/questionUtils');
+const { isAdminSocket } = require('./socketAuth');
 
 const {
+    PRESENTER_ROOM,
     getGameState,
     getCurrentQuestionIndex,
     getQuestions,
     getTimerInterval,
     getRemainingTime,
-    getHostSocketId,
     getAnswers,
     setGameState,
     setRemainingTime,
@@ -56,6 +57,8 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
     // --- NEXT QUESTION --- 
     // data.from (opcional): número de pregunta desde el que el HOST pulsó el botón.
     socket.on('next_question', async (data) => {
+        if (!isAdminSocket(socket)) return;
+
         try{
             console.log('➡️ Evento next_question recibido (avance manual)');
             await sendNextQuestion(io, data);
@@ -69,6 +72,8 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
 
     // --- PREVIOUS QUESTION ---
     socket.on('previous_question', async (data) => {
+        if (!isAdminSocket(socket)) return;
+
         try{
             console.log('⬅️ Evento previous_question recibido');
             await sendPreviousQuestion(io, data);
@@ -83,6 +88,8 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
 
     // --- ACTIVATE ANSWERS ---
     socket.on('activate_answers', async () => {
+        if (!isAdminSocket(socket)) return;
+
         try{
         console.log('🟢 Activando respuestas...');
         
@@ -173,6 +180,8 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
 
     // --- SHOW ANSWER ---
     socket.on('show_answer', async () => {
+        if (!isAdminSocket(socket)) return;
+
         let revealSent = false;
 
         try{
@@ -209,15 +218,11 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
                 }
 
                 const { host, phone } = buildReveal(currentQ, getAnswers(), ranking);
-                const hostSocket = getHostSocketId();
                 revealSent = true;
                 
-                // Al HOST: la respuesta (o respuestas) correcta(s) / los resultados
-                if (hostSocket) {
-                    io.to(hostSocket).emit('show_correct_answer', host);
-                } else {
-                    console.log('❌ HOST no encontrado en players');
-                }
+                // A quien está presentando (Host y, si está abierto, el panel de control de
+                // Admin): la respuesta (o respuestas) correcta(s) / los resultados.
+                io.to(PRESENTER_ROOM).emit('show_correct_answer', host);
 
                 // A los móviles de los jugadores: SOLO la respuesta (o los resultados de la
                 // encuesta). Nunca se envía la pregunta. Se emite ANTES del cambio de estado

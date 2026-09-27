@@ -1,0 +1,120 @@
+/* ===== Panel de control de la partida (Admin) ===== */
+
+.game-control-panel {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.gcp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.gcp-header .section-title {
+    margin: 0;
+}
+
+.gcp-reset-btn {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.gcp-reset-btn:hover {
+    background: #fee2e2;
+}
+
+.gcp-question-card {
+    background: #f9fafb;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.gcp-counter {
+    font-weight: 700;
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+}
+
+.gcp-question-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0 0 8px 0;
+}
+
+.gcp-timer {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--primary-blue);
+    margin: 4px 0;
+}
+
+.gcp-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+}
+
+.gcp-btn {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 2px solid #e5e7eb;
+    background: white;
+    color: #374151;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.gcp-btn:hover:not(:disabled) {
+    background: #f3f4f6;
+}
+
+.gcp-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.gcp-btn-primary {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: white;
+}
+
+.gcp-btn-primary:hover:not(:disabled) {
+    background: var(--primary-blue-dark);
+}
+
+/* Reutiliza estilos de HostView.css para el badge de tipo y el detalle de respuesta
+   (kind-badge, answer-reveal, number-ranking, poll-host-row...) — se cargan porque
+   HostView.css ya está importado en la app; aquí solo se ajusta el tamaño al panel. */
+.game-control-panel .answer-reveal {
+    text-align: left;
+    margin-top: var(--spacing-md);
+}
+
+.game-control-panel .answer-title {
+    font-size: 1.1rem;
+}
+
+.game-control-panel .correct-answer-display {
+    font-size: 1.4rem;
+    padding: var(--spacing-sm) var(--spacing-md);
+}

@@ -1,103 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import { useAdminSocketAuth } from '../hooks/useAdminSocketAuth';
+import { useGameControls } from '../hooks/useGameControls';
 import { useBranding } from '../hooks/useBranding';
+import AnswerReveal, { KIND_LABELS } from '../components/admin/AnswerReveal';
 import QRCode from "react-qr-code";
 import '../styles/HostView.css'
 
-const KIND_LABELS = {
-    TRUE_FALSE: 'Verdadero o falso',
-    NUMBER: 'Número más cercano',
-    POLL: 'Encuesta'
-};
-
-const PLACE_ICONS = ['🥇', '🥈', '🥉'];
-
-const formatNumber = (n) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 6 }).format(n);
-
-// Lo que se ve en la pantalla principal al pulsar "Mostrar respuesta", según el tipo de pregunta
-const renderReveal = (reveal) => {
-    const kind = reveal.kind || 'CHOICE';
-
-    if (kind === 'NUMBER') {
-        const winners = (reveal.ranking || []).filter((row) => row.points > 0);
-        const answeredCount = (reveal.ranking || []).length;
-
-        return (
-            <div className="answer-reveal">
-                <h2 className="answer-title">✅ Respuesta Correcta:</h2>
-                <div className="correct-answer-display number-reveal">{formatNumber(reveal.correctNumber)}</div>
-
-                {winners.length > 0 ? (
-                    <ul className="number-ranking">
-                        {winners.map((row) => (
-                            <li key={row.name} className="number-ranking-row">
-                                <span className="number-place">{PLACE_ICONS[row.place - 1] || `${row.place}.`}</span>
-                                <span className="number-team">{row.name}</span>
-                                <span className="number-guess">
-                                    {formatNumber(row.answer)}
-                                    <small>{row.distance === 0 ? ' · exacto' : ` · a ${formatNumber(row.distance)}`}</small>
-                                </span>
-                                <strong className="number-points">+{row.points}</strong>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <p className="number-nobody">Nadie respondió esta pregunta</p>
-                )}
-
-                {answeredCount > 0 && (
-                    <p className="number-answered">{answeredCount} {answeredCount === 1 ? 'equipo respondió' : 'equipos respondieron'}</p>
-                )}
-            </div>
-        );
-    }
-
-    if (kind === 'POLL') {
-        const total = reveal.total || 0;
-
-        return (
-            <div className="answer-reveal poll-reveal">
-                <h2 className="answer-title">📊 Resultados de la encuesta</h2>
-                {(reveal.options || []).map((text, i) => {
-                    const votes = reveal.counts?.[i] || 0;
-                    const percent = total > 0 ? Math.round((votes * 100) / total) : 0;
-
-                    return (
-                        <div key={i} className="poll-host-row">
-                            <div className="poll-host-head">
-                                <span className="poll-host-option">{text}</span>
-                                <span className="poll-host-numbers">{votes} · {percent}%</span>
-                            </div>
-                            <div className="poll-host-track">
-                                <div className="poll-host-fill" style={{ width: `${percent}%` }}></div>
-                            </div>
-                        </div>
-                    );
-                })}
-                <p className="number-answered">{total} {total === 1 ? 'voto' : 'votos'}</p>
-            </div>
-        );
-    }
-
-    // Opción múltiple y verdadero/falso
-    const options = reveal.correctOptions ?? [reveal.correctOption];
-
-    return (
-        <div className="answer-reveal">
-            <h2 className="answer-title">
-                ✅ {options.length > 1 ? 'Respuestas Correctas:' : 'Respuesta Correcta:'}
-            </h2>
-            {options.map((option, i) => (
-                <div key={i} className="correct-answer-display">
-                    {option}
-                </div>
-            ))}
-        </div>
-    );
-};
-
 function HostView() {
-    const { socket } = useSocket();
+    const { socket, isConnected } = useSocket();
+    const { isAdminReady } = useAdminSocketAuth(socket, isConnected);
     const branding = useBranding();   // logo, color y texto de bienvenida del cliente
 
     const [groups, setGroups] = useState([]);
@@ -114,6 +26,20 @@ function HostView() {
         if (!socket) {
         console.log('⏳ Esperando socket...');
         return;
+        }
+
+        // Hace falta que el socket ya se haya autenticado como admin antes de poder unirse
+        // como HOST (ver useAdminSocketAuth). Si el token ya no es válido, se vuelve al login.
+        if (isAdminReady === false) {
+            console.log('⛔ Token de administrador no válido; volviendo al login');
+            localStorage.removeItem('admin_token');
+            window.location.reload();
+            return;
+        }
+
+        if (isAdminReady !== true) {
+            console.log('⏳ Esperando autenticación de administrador...');
+            return;
         }
 
         console.log('✅ Socket disponible, inicializando HostView');
@@ -185,23 +111,11 @@ function HostView() {
                 socket.off('timer_finished')
             }
         }
-    }, [socket]);
+    }, [socket, isAdminReady]);
 
     // Se envía "from" (la pregunta desde la que se pulsó). Si el servidor ya avanzó por un
     // clic anterior, ignora este: así un doble clic ya no salta una pregunta.
-    const goNext = () => {
-        socket.emit('next_question', { from: questionPosition?.number });
-    };
-
-    const goPrevious = () => {
-        if (gameState === 'QUESTION_ACTIVE' &&
-            !window.confirm('La pregunta está en curso. ¿Volver a la pregunta anterior?')) {
-            return;
-        }
-        socket.emit('previous_question', { from: questionPosition?.number });
-    };
-
-    const canGoBack = (questionPosition?.number ?? 0) > 1;
+    const { goNext, goPrevious, activateAnswers, showAnswer, canGoBack } = useGameControls(socket, { gameState, questionPosition });
 
     const AdminButton = () => (
         <button 
@@ -303,6 +217,14 @@ function HostView() {
             </div>
         )
     );
+
+    if (isAdminReady !== true) {
+        return (
+            <div className="host-container">
+                <h3 className="sub-title">Verificando acceso…</h3>
+            </div>
+        );
+    }
 
     if(gameState === 'LOBBY'){
         return(
@@ -455,7 +377,7 @@ function HostView() {
                         </div>
                     )}
                     
-                    {gameState === 'SHOW_ANSWER' && correctAnswer && renderReveal(correctAnswer)}
+                    {gameState === 'SHOW_ANSWER' && correctAnswer && <AnswerReveal reveal={correctAnswer} />}
                     
                     {gameState === 'QUESTION_ACTIVE' && currentKind === 'NUMBER' && (
                         <p className="kind-hint">🔢 Escriban el número en el móvil</p>
@@ -486,7 +408,7 @@ function HostView() {
                     {gameState === 'QUESTION_LOCKED' && (
                         <button 
                             className="btn-main-action activate"
-                            onClick={()=>{socket.emit('activate_answers')}}>
+                            onClick={activateAnswers}>
                                 Activar Respuestas
                         </button>
                     )}
@@ -494,7 +416,7 @@ function HostView() {
                     {gameState === 'QUESTION_ACTIVE' && (
                         <button 
                             className="btn-main-action show-answer"
-                            onClick={()=>{socket.emit('show_answer')}}>
+                            onClick={showAnswer}>
                                 {currentKind === 'POLL' ? 'Mostrar Resultados' : 'Mostrar Respuesta Correcta'}
                         </button>
                     )}

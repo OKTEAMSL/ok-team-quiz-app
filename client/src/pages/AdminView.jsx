@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import { useSocket } from '../hooks/useSocket';
 import RecoveryCodeModal from '../components/screens/RecoveryCodeModal';
 import QuizManager from '../components/admin/QuizManager';
+import GameControlPanel from '../components/admin/GameControlPanel';
 import '../styles/Admin.css'
 
 // Tipos de respuesta que se pueden elegir al crear una pregunta
@@ -661,6 +662,8 @@ function AdminView() {
                     Cerrar Sesión
                 </button>
             </div>
+
+            <GameControlPanel />
 
             <QuizManager
                 quizzes={quizzes}

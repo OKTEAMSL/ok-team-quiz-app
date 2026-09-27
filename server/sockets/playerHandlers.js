@@ -2,8 +2,9 @@ const Player = require('../models/Players');
 const gameState = require('../utils/gameState');
 const { emitQuestionPosition } = require('../utils/gameLogics');
 const { toClientQuestion, buildReveal } = require('../utils/questionUtils');
-
+const { isAdminSocket } = require('./socketAuth');
 const {
+    PRESENTER_ROOM,
     getGameState,
     getCurrentQuestionIndex,
     getQuestions,
@@ -73,6 +74,15 @@ const registerPlayerHandlers = (io, socket) => {
             if (!groupId || groupId.trim() === "") {
                 console.log(`⛔ Intento de conexión sin nombre`);
                 socket.emit('error', { message: 'Debes proporcionar un nombre de equipo' });
+                return;
+            }
+
+            // "HOST" es una identidad especial (ve las preguntas y controla la partida), no un
+            // nombre de equipo cualquiera. Antes, cualquiera que mandara {name: 'HOST'} se
+            // volvía el presentador. Ahora hace falta haberse autenticado primero con la
+            // contraseña de administrador (evento 'admin_auth'), igual que en /admin.
+            if (groupId === 'HOST' && !isAdminSocket(socket)) {
+                console.log('⛔ Intento de unirse como HOST sin autenticación de administrador');
                 return;
             }
 
@@ -152,6 +162,12 @@ const registerPlayerHandlers = (io, socket) => {
             }
 
             socket.join('game_room')
+
+            // El HOST también entra a la sala de "presentadores" (junto con el panel de
+            // control de Admin, si está abierto): así ambos reciben la pregunta en curso.
+            if (groupId === 'HOST') {
+                socket.join(PRESENTER_ROOM);
+            }
             
             socket.emit('game_state', getGameState());
             io.to('game_room').emit('update_players', Object.values(players))
@@ -199,4 +215,4 @@ const registerPlayerHandlers = (io, socket) => {
     });
 }
 
-module.exports = { registerPlayerHandlers };
+module.exports = { registerPlayerHandlers, syncClientToCurrentPhase };

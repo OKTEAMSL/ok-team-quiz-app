@@ -1,5 +1,12 @@
 // Variables globales del juego
 const SERVER_RUN_ID = Date.now();
+
+// Sala de Socket.IO donde están "quien presenta la partida": la pantalla del Host (con el
+// QR) y el panel de control de Admin, si está abierto. Antes, la pregunta en curso solo se
+// mandaba al socket del jugador "HOST" (ver getHostSocketId); ahora que Admin también puede
+// presentar, ambos reciben lo mismo uniéndose a esta sala.
+const PRESENTER_ROOM = 'presenter_room';
+
 let GAME_SESSION_ID = Date.now();
 let questions = [];
 const players = {};
@@ -156,6 +163,8 @@ const resetGame = () => {
 }
 
 module.exports = {
+    PRESENTER_ROOM,
+
     // Getters
     getServerRunId,
     getGameSessionId,
