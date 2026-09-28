@@ -1,5 +1,6 @@
 const Question = require('../models/Questions.js')
 const Quiz = require('../models/Quiz');
+const Answer = require('../models/Answer');
 const { sequelize } = require('../config/db');
 const { findAllOrdered, getActiveQuiz, KINDS, TRUE_FALSE_OPTIONS } = require('../utils/questionUtils');
 
@@ -403,3 +404,35 @@ exports.reorderQuestions = async(req, res) => {
       return res.status(500).json({ message: 'Error al reordenar preguntas' });
    }
 }
+
+// GET /api/questions/:id/answers — historial de respuestas de una pregunta, una fila por
+// equipo que respondió, con el texto legible de lo que contestó cada uno.
+exports.getQuestionAnswers = async (req, res) => {
+   try {
+      const { id } = req.params;
+
+      if (!isUuid(id)) {
+         return res.status(400).json({ message: 'ID de pregunta no válido' });
+      }
+
+      const question = await Question.findByPk(id);
+
+      if (!question) {
+         return res.status(404).json({ message: 'Pregunta no encontrada' });
+      }
+
+      const answers = await Answer.findAll({
+         where: { questionId: id },
+         order: [['createdAt', 'ASC']],
+         attributes: ['playerName', 'displayAnswer', 'rawAnswer', 'isCorrect', 'pointsAwarded', 'createdAt']
+      });
+
+      return res.status(200).json({
+         question: { id: question.id, title: question.title, kind: question.kind || 'CHOICE' },
+         answers
+      });
+   } catch (error) {
+      console.error('Error al obtener las respuestas de la pregunta:', error);
+      return res.status(500).json({ message: 'Error al obtener las respuestas' });
+   }
+};

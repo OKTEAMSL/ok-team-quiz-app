@@ -1,0 +1,55 @@
+/* ===== Modal: respuestas de los equipos por pregunta ===== */
+
+.participant-answers-modal {
+    max-width: 560px;
+    width: 95%;
+}
+
+.participant-answers-question {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #1f2937;
+    margin: 0 0 var(--spacing-md) 0;
+}
+
+.participant-answers-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.participant-answer-row {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr 1.6em auto;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: #f9fafb;
+}
+
+.pa-name {
+    font-weight: 700;
+    color: #1f2937;
+    overflow-wrap: anywhere;
+}
+
+.pa-answer {
+    color: #374151;
+    overflow-wrap: anywhere;
+}
+
+.pa-status {
+    text-align: center;
+}
+
+.pa-points {
+    font-weight: 700;
+    color: var(--color-success);
+    text-align: right;
+}

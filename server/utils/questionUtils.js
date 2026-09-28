@@ -238,6 +238,21 @@ const toClientQuestion = (question) => {
     };
 };
 
+// Convierte la respuesta cruda que mandó un jugador (índice de opción, número, índice de
+// encuesta) en texto legible para el panel de administración. Ej: kind=CHOICE, value=1,
+// options=["Madrid","París"] -> "París". Para NUMBER se formatea con coma decimal (es-ES).
+const formatAnswerForDisplay = (question, kind, rawValue) => {
+    if (kind === 'NUMBER') {
+        const n = Number(rawValue);
+        return Number.isFinite(n) ? new Intl.NumberFormat('es-ES', { maximumFractionDigits: 6 }).format(n) : String(rawValue);
+    }
+
+    // CHOICE, TRUE_FALSE, POLL: 'rawValue' es el índice de la opción elegida
+    const index = Number(rawValue);
+    const options = Array.isArray(question.options) ? question.options : [];
+    return (Number.isInteger(index) && options[index] !== undefined) ? options[index] : String(rawValue);
+};
+
 module.exports = {
     KINDS,
     TRUE_FALSE_OPTIONS,
@@ -253,5 +268,6 @@ module.exports = {
     computeNumberRanking,
     computePollResults,
     buildReveal,
-    toClientQuestion
+    toClientQuestion,
+    formatAnswerForDisplay
 };

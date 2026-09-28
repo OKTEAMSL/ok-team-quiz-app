@@ -1,6 +1,7 @@
 const Player = require('../models/Players');
+const Answer = require('../models/Answer');
 const gameState = require('../utils/gameState');
-const { getCorrectIndexes, getKind } = require('../utils/questionUtils');
+const { getCorrectIndexes, getKind, formatAnswerForDisplay } = require('../utils/questionUtils');
 
 const {
     getGameState,
@@ -85,16 +86,17 @@ const registerAnswerHandlers = (io, socket) => {
             player.hasAnswered = true;
             markAnswered(player.name, value);
 
+            let isCorrect = null;
+            let pointsAwarded = 0;
+
             // Puntos al momento: solo en opción múltiple y verdadero/falso.
             //  - NUMBER: los puntos se dan al mostrar la respuesta (depende de quién quedó más cerca).
             //  - POLL: no hay puntos.
             if (kind === 'CHOICE' || kind === 'TRUE_FALSE') {
                 // La pregunta puede tener 1 o más respuestas correctas: cualquiera es válida.
-                const isCorrect = getCorrectIndexes(questionInPlay).includes(value);
+                isCorrect = getCorrectIndexes(questionInPlay).includes(value);
 
                 if (isCorrect) {
-                    let pointsAwarded;
-
                     // Si responde correcto primero
                     if (getFirstCorrectAnswer() === null) {
                         setFirstCorrectAnswer(socket.id);
@@ -120,6 +122,24 @@ const registerAnswerHandlers = (io, socket) => {
                 }
             } else {
                 console.log(`📝 ${player.name} respondió (${kind}): ${value}`);
+            }
+
+            // Registro histórico de la respuesta, para el panel de administración (ver
+            // cada respuesta por participante). Para NUMBER, isCorrect/pointsAwarded se
+            // actualizan más tarde, al mostrar la respuesta (ver awardNumberPoints).
+            try {
+                await Answer.create({
+                    questionId: questionInPlay.id,
+                    playerName: player.name,
+                    rawAnswer: String(value),
+                    displayAnswer: formatAnswerForDisplay(questionInPlay, kind, value),
+                    isCorrect,
+                    pointsAwarded
+                });
+            } catch (answerLogError) {
+                // No debe impedir que el jugador reciba sus puntos si el registro histórico
+                // falla por algún motivo — es un dato adicional, no crítico para el juego.
+                console.error('⚠️ No se pudo guardar el historial de la respuesta:', answerLogError.message);
             }
             
             // Actualizar Host

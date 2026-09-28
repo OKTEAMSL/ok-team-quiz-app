@@ -1,4 +1,5 @@
 const Player = require('../models/Players');
+const Answer = require('../models/Answer');
 const { sequelize } = require('../config/db');
 const gameState = require('../utils/gameState');
 const { revertQuestionAwards, stopTimer } = require('../utils/gameLogics');
@@ -47,6 +48,20 @@ const awardNumberPoints = async (io, question, questionIndex) => {
 
     if (winners.length > 0) {
         io.to('game_room').emit('update_players', Object.values(players));
+    }
+
+    // 3) Registro histórico: al enviar la respuesta (answerHandlers.js) las preguntas NUMBER
+    //    se guardan con 0 puntos y sin saber si "acertaron" (eso depende de los demás). Ahora
+    //    que ya se calculó la clasificación, se actualizan esas filas con el resultado real.
+    try {
+        for (const row of ranking) {
+            await Answer.update(
+                { isCorrect: row.points > 0, pointsAwarded: row.points },
+                { where: { questionId: question.id, playerName: row.name } }
+            );
+        }
+    } catch (answerLogError) {
+        console.error('⚠️ No se pudo actualizar el historial de respuestas (NUMBER):', answerLogError.message);
     }
 
     return ranking;
@@ -111,7 +126,20 @@ const registerGameHandlers = (io, socket, sendNextQuestion, sendPreviousQuestion
             io.to('game_room').emit('update_players', Object.values(players));
         }
 
-        // Durante ese await el presentador pudo haber navegado a otra pregunta.
+        // Por el mismo motivo, se borra el historial de respuestas de la vez anterior: si
+        // no, al volver a responder quedarían dos filas por equipo para esta pregunta en el
+        // panel de administración, una de ellas ya inválida. Solo se limpia AQUÍ (al activar
+        // de verdad las respuestas), no al simplemente navegar hasta la pregunta — así,
+        // mirar una pregunta ya jugada sin volver a activarla no borra su historial.
+        if (currentQ?.id) {
+            try {
+                await Answer.destroy({ where: { questionId: currentQ.id } });
+            } catch (error) {
+                console.error('⚠️ No se pudo limpiar el historial de respuestas anterior:', error.message);
+            }
+        }
+
+        // Durante esos await el presentador pudo haber navegado a otra pregunta.
         if (getGameState() !== 'QUESTION_ACTIVE' || getCurrentQuestionIndex() - 1 !== questionIndex) {
             console.log('⚠️ La pregunta cambió mientras se activaba; se cancela esta activación');
             return;

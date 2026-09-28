@@ -56,6 +56,32 @@ app.use(corsMiddleware);
 
 const server = http.createServer(app); // Creamos el servidor HTTP a partir de Express
 
+// --- Manejo de errores a nivel de proceso ---
+// Sin esto, un error no capturado en cualquier parte del código (por ejemplo, dentro de un
+// handler de socket que no esté en un try/catch) tira TODO el proceso, cortando de golpe
+// todas las partidas en curso. Se registra el error y el servidor sigue funcionando: es
+// mejor sobrevivir con un error en el log que desaparecer en mitad de un evento en vivo.
+//
+// PERO: esto solo aplica una vez que el servidor ya está escuchando peticiones. Un error
+// ANTES de eso (por ejemplo, el puerto ya está en uso) es un fallo de arranque real: seguir
+// "vivo" sin escuchar en ningún puerto dejaría el servicio como si funcionara cuando en
+// realidad nunca llegó a levantar. Eso es peor que el fallo original, no una mejora.
+let serverIsListening = false;
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Promesa rechazada sin capturar:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('🔥 Excepción no capturada:', error);
+
+    if (!serverIsListening) {
+        console.error('❌ Ocurrió antes de que el servidor arrancara del todo: no puede seguir así.');
+        process.exit(1);
+    }
+    // Si ya estaba escuchando, se sigue vivo con el error registrado (ver comentario arriba).
+});
+
 const io = configureSocket(server, allowedOrigins);
 
 playerController.setSocketIO(io);
@@ -153,7 +179,36 @@ async function startServer() {
         await loadQuestions();
 
         server.listen(port, '0.0.0.0', () => {
+            serverIsListening = true;
             console.log(`✅ Servidor corriendo y listo en el puerto ${port}`)
+        });
+
+        // Railway (y la mayoría de plataformas) mandan SIGTERM antes de matar el proceso
+        // al desplegar una nueva versión. Sin manejarlo, Node lo ignora por defecto y el
+        // proceso se corta en seco, cortando también las conexiones de socket en ese
+        // instante. Aquí se avisa a quien esté conectado y se cierra con más cuidado.
+        process.on('SIGTERM', () => {
+            console.log('🛑 SIGTERM recibido (posible redeploy) — cerrando con cuidado...');
+
+            io.emit('server_shutdown', {
+                message: 'El servidor se está reiniciando. La página se recargará sola en unos segundos.'
+            });
+
+            server.close(() => {
+                console.log('👋 Servidor cerrado.');
+                process.exit(0);
+            });
+
+            // server.close() no se completa mientras haya conexiones de socket abiertas (es su
+            // comportamiento normal). Se les da un instante para que reciban el aviso de
+            // arriba y luego se cierran a propósito, así el apagado no depende del timeout
+            // de emergencia de abajo en el caso normal (con jugadores conectados).
+            setTimeout(() => {
+                io.disconnectSockets(true);
+            }, 300);
+
+            // Por si algo se queda colgado cerrando, no esperar para siempre
+            setTimeout(() => process.exit(0), 5000);
         });
     } catch (error) {
         console.error("❌ Error fatal al iniciar el servidor:", error);

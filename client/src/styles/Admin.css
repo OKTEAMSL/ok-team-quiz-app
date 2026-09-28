@@ -32,12 +32,101 @@
 /* --- CONTENEDOR PRINCIPAL --- */
 
 .admin-container {
-    max-width: 900px;
+    max-width: 1400px;
     margin: var(--spacing-2xl) auto;
     background: var(--card-bg);
     padding: var(--spacing-2xl);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
+}
+
+/* ===== Disposición general: barra lateral + contenido en pestañas =====
+   Antes todo (control de la partida, cuestionarios, participantes, preguntas) estaba en
+   una sola columna larga. Ahora lo que se consulta todo el rato durante el evento (control
+   de la partida, clasificación) queda fijo en una barra lateral, y el resto se organiza en
+   pestañas en vez de apilarse. */
+
+.admin-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: var(--spacing-lg);
+    align-items: start;
+    margin-top: var(--spacing-lg);
+}
+
+.admin-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    position: sticky;
+    top: var(--spacing-lg);
+}
+
+.admin-main {
+    min-width: 0;   /* evita que el contenido (p.ej. texto largo) desborde el grid */
+}
+
+.admin-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: var(--spacing-lg);
+}
+
+.admin-tab {
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px var(--spacing-md);
+    font-weight: 700;
+    font-size: 1rem;
+    color: #6b7280;
+    cursor: pointer;
+    font-family: inherit;
+    margin-bottom: -2px;
+}
+
+.admin-tab:hover {
+    color: #374151;
+}
+
+.admin-tab.active {
+    color: var(--primary-blue);
+    border-bottom-color: var(--primary-blue);
+}
+
+.btn-view-answers {
+    background: #eef2ff;
+}
+
+@media (max-width: 1100px) {
+    .admin-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-sidebar {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .admin-sidebar > * {
+        flex: 1 1 320px;
+    }
+}
+
+@media (max-width: 600px) {
+    .admin-sidebar {
+        flex-direction: column;
+    }
+
+    .admin-tabs {
+        overflow-x: auto;
+    }
+
+    .admin-tab {
+        white-space: nowrap;
+    }
 }
 
 /* --- HEADER --- */
@@ -1060,4 +1149,18 @@
 
 .form-section-title {
     margin: 0 0 var(--spacing-md) 0;
+}
+
+
+/* Selector del cuestionario que se edita, arriba de la pestaña Preguntas */
+.quiz-switcher {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.quiz-switcher .form-select {
+    max-width: 420px;
 }

@@ -3,6 +3,8 @@ import { useSocket } from '../hooks/useSocket';
 import RecoveryCodeModal from '../components/screens/RecoveryCodeModal';
 import QuizManager from '../components/admin/QuizManager';
 import GameControlPanel from '../components/admin/GameControlPanel';
+import LeaderboardPanel from '../components/admin/LeaderboardPanel';
+import ParticipantAnswers from '../components/admin/ParticipantAnswers';
 import '../styles/Admin.css'
 
 // Tipos de respuesta que se pueden elegir al crear una pregunta
@@ -98,6 +100,17 @@ function AdminView() {
     // Estados PLayers
     const [ players, setPlayers ] = useState([]);
     const [ showPlayersModal, setShowPlayersModal ] = useState(false);
+    // Pestaña activa. Se recuerda entre recargas de la página (si no, cada F5 te devolvería a
+    // "Cuestionarios" aunque estuvieras editando preguntas).
+    const [ activeTab, setActiveTab ] = useState(() => {
+        const saved = localStorage.getItem('admin_active_tab');
+        return ['quizzes', 'questions', 'participants'].includes(saved) ? saved : 'quizzes';
+    });
+    const changeTab = (tab) => {
+        setActiveTab(tab);
+        localStorage.setItem('admin_active_tab', tab);
+    };
+    const [ viewingAnswersFor, setViewingAnswersFor ] = useState(null);   // id de pregunta, o null
     const [ showPasswordModal, setShowPasswordModal ] = useState(false);
     const [ currentPassword, setCurrentPassword ] = useState('');
     const [ newPassword, setNewPassword ] = useState('');
@@ -663,42 +676,93 @@ function AdminView() {
                 </button>
             </div>
 
-            <GameControlPanel />
+            <div className="admin-layout">
+                {/* Barra lateral: siempre visible, es lo que se usa constantemente durante el evento */}
+                <aside className="admin-sidebar">
+                    <GameControlPanel />
+                    <LeaderboardPanel fetchWithAuth={fetchWithAuth} apiUrl={API_URL} />
+                </aside>
 
-            <QuizManager
-                quizzes={quizzes}
-                selectedQuizId={selectedQuizId}
-                onSelect={handleSelectQuiz}
-                onChanged={handleQuizzesChanged}
-                fetchWithAuth={fetchWithAuth}
-                apiUrl={API_URL}
-            />
+                {/* Contenido principal: organizado en pestañas en vez de una sola lista larga */}
+                <div className="admin-main">
+                    <div className="admin-tabs" role="tablist">
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'quizzes'}
+                            className={`admin-tab ${activeTab === 'quizzes' ? 'active' : ''}`}
+                            onClick={() => changeTab('quizzes')}
+                        >
+                            Cuestionarios
+                        </button>
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'questions'}
+                            className={`admin-tab ${activeTab === 'questions' ? 'active' : ''}`}
+                            onClick={() => changeTab('questions')}
+                        >
+                            Preguntas
+                        </button>
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'participants'}
+                            className={`admin-tab ${activeTab === 'participants' ? 'active' : ''}`}
+                            onClick={() => changeTab('participants')}
+                        >
+                            Participantes
+                        </button>
+                    </div>
 
-            <hr className="divider"/>
+                    {activeTab === 'quizzes' && (
+                        <QuizManager
+                            quizzes={quizzes}
+                            selectedQuizId={selectedQuizId}
+                            onSelect={handleSelectQuiz}
+                            onChanged={handleQuizzesChanged}
+                            fetchWithAuth={fetchWithAuth}
+                            apiUrl={API_URL}
+                        />
+                    )}
 
-            {/* Sección de gestión de jugadores */}
-            <div className="players-section">
-                <h2 className="section-title">Gestión de Participantes</h2>
-                <div className="players-actions">
-                    <button className="btn-players" onClick={handleOpenPlayersModal}>
-                        Editar Puntuaciones
-                    </button>
-                    <button className="btn-clean-season" onClick={handleCleanSeason}>
-                        Limpiar Temporada
-                    </button>
-                </div>
-                <p className="players-count">
-                    Participantes registrados: <strong>{players.length}</strong>
-                </p>
-            </div>
+                    {activeTab === 'participants' && (
+                        <div className="players-section">
+                            <h2 className="section-title">Gestión de Participantes</h2>
+                            <div className="players-actions">
+                                <button className="btn-players" onClick={handleOpenPlayersModal}>
+                                    Editar Puntuaciones
+                                </button>
+                                <button className="btn-clean-season" onClick={handleCleanSeason}>
+                                    Limpiar Temporada
+                                </button>
+                            </div>
+                            <p className="players-count">
+                                Participantes registrados: <strong>{players.length}</strong>
+                            </p>
+                        </div>
+                    )}
 
-            <hr className="divider"/>
+                    {activeTab === 'questions' && (
+                    <>
+                    <div className="quiz-switcher">
+                        <label className="form-label" htmlFor="quiz-switcher-select">Cuestionario que estás editando:</label>
+                        <select
+                            id="quiz-switcher-select"
+                            className="form-select"
+                            value={selectedQuizId || ''}
+                            onChange={(e) => handleSelectQuiz(e.target.value)}
+                        >
+                            {quizzes.map((quiz) => (
+                                <option key={quiz.id} value={quiz.id}>
+                                    {quiz.name}{quiz.isActive ? '  (EN USO)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
-            <h2 className="section-title form-section-title">
-                {editingId ? "Editar Pregunta" : "Nueva Pregunta"}
-            </h2>
+                    <h2 className="section-title form-section-title">
+                        {editingId ? "Editar Pregunta" : "Nueva Pregunta"}
+                    </h2>
 
-            <div className="form-group">
+                    <div className="form-group">
                 <label className="form-label">Título de la pregunta:</label>
                 <input 
                     className="form-input"
@@ -979,6 +1043,14 @@ function AdminView() {
                             <button className="btn-icon btn-edit" onClick={() => handleEdit(q)}>
                                 ✏️
                             </button>
+                            <button
+                                className="btn-icon btn-view-answers"
+                                onClick={() => setViewingAnswersFor(q.id)}
+                                title="Ver respuestas de los equipos"
+                                aria-label={`Ver respuestas de la pregunta ${index + 1}`}
+                            >
+                                👁️
+                            </button>
                             <button className="btn-icon btn-delete-item" onClick={() => handleDelete(q.id)}>
                                 🗑️
                             </button>
@@ -987,6 +1059,19 @@ function AdminView() {
                     );
                 })}
             </div>
+                    </>
+                    )}
+                </div>
+            </div>
+
+            {viewingAnswersFor && (
+                <ParticipantAnswers
+                    questionId={viewingAnswersFor}
+                    onClose={() => setViewingAnswersFor(null)}
+                    fetchWithAuth={fetchWithAuth}
+                    apiUrl={API_URL}
+                />
+            )}
 
             {/* MODAL: Editar Puntuacion */}
             {showPlayersModal && (

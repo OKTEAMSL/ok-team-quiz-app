@@ -1,4 +1,5 @@
 const Player = require('../models/Players');
+const Answer = require('../models/Answer');
 const { sequelize } = require('../config/db');
 const gameState = require('./gameState');
 const { findAllOrdered, getActiveQuiz, toClientQuestion } = require('./questionUtils');
@@ -57,7 +58,10 @@ const emitQuestionPosition = (io, socketId) => {
 };
 
 // --- Presentar una pregunta (la deja en estado BLOQUEADO, solo visible para quien presenta) ---
-// Lo usan tanto "siguiente" como "anterior".
+// Lo usan tanto "siguiente" como "anterior". A propósito NO borra el historial de respuestas
+// aquí: solo mirar una pregunta (navegar hacia ella) no debe borrar nada. El historial se
+// limpia en 'activate_answers' (gameHandlers.js), justo antes de RE-abrir las respuestas —
+// ese es el momento real en que se va a rejugar, igual que revertQuestionAwards.
 const presentQuestion = (io, questionIndex) => {
     const question = getQuestions()[questionIndex];
 
@@ -116,11 +120,11 @@ const goNext = async (io) => {
         return;
     }
 
-    presentQuestion(io, getCurrentQuestionIndex());
+    await presentQuestion(io, getCurrentQuestionIndex());
 };
 
 // --- Retroceder ---
-const goPrevious = (io) => {
+const goPrevious = async (io) => {
     const total = getQuestions().length;
     const current = getCurrentQuestionIndex();   // número (1..N) de la pregunta actual
 
@@ -143,7 +147,7 @@ const goPrevious = (io) => {
     }
 
     console.log(`⬅️ Volviendo a la pregunta ${target + 1}`);
-    presentQuestion(io, target);
+    await presentQuestion(io, target);
 };
 
 // --- Control de navegación ---
@@ -169,7 +173,7 @@ const navigate = async (io, direction, data) => {
         if (direction === 'next') {
             await goNext(io);
         } else {
-            goPrevious(io);
+            await goPrevious(io);
         }
     } finally {
         navigationLocked = false;

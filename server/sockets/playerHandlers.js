@@ -77,6 +77,17 @@ const registerPlayerHandlers = (io, socket) => {
                 return;
             }
 
+            // Límite de longitud: sin esto, un nombre extremadamente largo se retransmite tal
+            // cual a TODOS los conectados en cada actualización de jugadores (update_players),
+            // inflando cada mensaje. La columna de la base de datos también tiene un límite
+            // (VARCHAR), pero eso se comprobaría recién al guardar, después de ya haberlo
+            // difundido a todo el mundo.
+            if (groupId.trim().length > 40) {
+                console.log(`⛔ Nombre de equipo demasiado largo (${groupId.trim().length} caracteres)`);
+                socket.emit('error', { message: 'El nombre del equipo no puede superar los 40 caracteres' });
+                return;
+            }
+
             // "HOST" es una identidad especial (ve las preguntas y controla la partida), no un
             // nombre de equipo cualquiera. Antes, cualquiera que mandara {name: 'HOST'} se
             // volvía el presentador. Ahora hace falta haberse autenticado primero con la
@@ -190,7 +201,13 @@ const registerPlayerHandlers = (io, socket) => {
             if(!player) return;
 
             if(player.name === 'HOST'){
-                console.log(`🔌 HOST desconectado (mantenido en memoria)`);
+                // Se limpia de inmediato (a diferencia de los jugadores, que esperan 30s
+                // por si su móvil se durmió). El HOST no tiene puntuación ni cuenta en
+                // ninguna lista de equipos — dejarlo en memoria indefinidamente cuando el
+                // presentador cierra la pestaña era una fuga de memoria sin ningún beneficio.
+                console.log(`🔌 HOST desconectado`);
+                delete players[socket.id];
+                io.to('game_room').emit('update_players', Object.values(players));
                 return;
             }
 

@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import io from 'socket.io-client';
 
-let socketInstance = null; 
+let socketInstance = null;
+
+// 'server_shutdown' se reenvía a TODO componente que use este hook, pero varios
+// componentes pueden estar montados a la vez sobre el mismo socket (por ejemplo, el panel
+// de Admin y su GameControlPanel). Esta bandera evita mostrar el aviso y recargar la
+// página varias veces seguidas cuando eso pasa.
+let shutdownHandled = false;
 
 // Los navegadores móviles congelan los temporizadores de la página cuando está en segundo
 // plano, así que el reintento automático puede tardar en dispararse. Al volver a la app (o
@@ -61,14 +67,30 @@ export const useSocket = () => {
             setIsConnected(false);
         };
 
+        // El servidor avisa antes de reiniciarse (por ejemplo, al desplegar una
+        // actualización). En vez de dejar la pantalla colgada esperando una reconexión que
+        // tardará, se avisa y se recarga sola tras unos segundos — el tiempo justo para que
+        // el nuevo servidor ya esté escuchando. Aplica a cualquier pantalla (móvil, Host,
+        // Admin), porque este hook es la base que todas comparten.
+        const onServerShutdown = (data) => {
+            if (shutdownHandled) return;
+            shutdownHandled = true;
+
+            console.log('🛑 El servidor va a reiniciarse:', data?.message);
+            alert((data?.message || 'El servidor se está reiniciando.') + '\n\nLa página se recargará sola en unos segundos.');
+            setTimeout(() => window.location.reload(), 4000);
+        };
+
         socketInstance.on('connect', onConnect);
         socketInstance.on('disconnect', onDisconnect);
+        socketInstance.on('server_shutdown', onServerShutdown);
 
         setIsConnected(socketInstance.connected);
 
         return () => {
             socketInstance.off('connect', onConnect);
             socketInstance.off('disconnect', onDisconnect);
+            socketInstance.off('server_shutdown', onServerShutdown);
         };
     }, []);
 

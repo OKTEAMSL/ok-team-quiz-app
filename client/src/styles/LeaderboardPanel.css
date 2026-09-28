@@ -1,0 +1,54 @@
+/* ===== Clasificación (panel de administración) ===== */
+
+.leaderboard-panel {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.leaderboard-panel .section-title {
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.leaderboard-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.leaderboard-row {
+    display: grid;
+    grid-template-columns: 2em 1fr auto;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: #f9fafb;
+}
+
+.leaderboard-row.top-three {
+    background: #fefce8;
+}
+
+.leaderboard-place {
+    font-weight: 700;
+    text-align: center;
+    color: #6b7280;
+}
+
+.leaderboard-name {
+    font-weight: 600;
+    color: #1f2937;
+    overflow-wrap: anywhere;
+}
+
+.leaderboard-score {
+    font-weight: 700;
+    color: var(--primary-blue);
+}

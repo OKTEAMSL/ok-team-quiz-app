@@ -29,6 +29,7 @@ const LoginScreen = ({
                     value={nameGroup} 
                     onChange={(e) => setNameGroup(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    maxLength={40}
                     autoFocus
                 />
                 
